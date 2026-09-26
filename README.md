@@ -88,7 +88,7 @@ The tests cover conversation parsing, WAV pause concatenation, and project stora
 - **First generation fails:** check internet access and sufficient disk space, then retry. The model/voice pack downloads lazily.
 - **A voice fails:** pick an ID from the dropdown; IDs are validated before synthesis.
 - **Browser cannot reach backend:** confirm Uvicorn is on port 8000 and Vite is on port 5173.
-- **Need MP3:** WAV is intentionally mandatory and dependency-free. Convert generated files with any local FFmpeg installation: `ffmpeg -i conversation.wav conversation.mp3`.
+- **Need MP3:** generation now writes both WAV and MP3 automatically (via `lameenc`, no FFmpeg). Download either from the player or History.
 
 ## Adding another engine
 

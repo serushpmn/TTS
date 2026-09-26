@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.py[cod]
+node_modules/
+dist/
+output/*
+!output/.gitkeep
+temp/*
+!temp/.gitkeep
+data/*.json
+.env

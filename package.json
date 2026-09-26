@@ -1,0 +1,11 @@
+{
+  "name": "dialogue-studio",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Local multi-speaker dialogue TTS with Kokoro",
+  "scripts": {
+    "setup": "node scripts/setup.mjs",
+    "dev": "node scripts/dev.mjs",
+    "start": "node scripts/dev.mjs"
+  }
+}
