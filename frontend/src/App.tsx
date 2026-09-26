@@ -1,18 +1,31 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { api } from "./api";
+import { applyAppearance, loadMode, loadTheme, THEMES, type ModeId, type ThemeId } from "./themes";
 import type { GenerateJob, HistoryItem, Message, Project, Speaker, Voice } from "./types";
+import {
+  allowedGendersFor,
+  genderOf,
+  hasMixedGenders,
+  nextSpeakerDefaults,
+  randomizeSpeakerVoices,
+  randomVoiceForSpeaker,
+} from "./voices";
 
 const id = () => crypto.randomUUID();
 
-const initialSpeakers: Speaker[] = [
-  { id: id(), name: "Sarah", voice_id: "af_heart", speed: 1 },
-  { id: id(), name: "John", voice_id: "am_michael", speed: 1 },
-];
+function createSpeakers(): Speaker[] {
+  return [
+    { id: id(), name: "Sarah", voice_id: "af_heart", speed: 1 },
+    { id: id(), name: "John", voice_id: "am_michael", speed: 1 },
+  ];
+}
 
-const initialMessages = (speakers: Speaker[]): Message[] => [
-  { id: id(), speaker_id: speakers[0].id, text: "Hey, how are you doing?" },
-  { id: id(), speaker_id: speakers[1].id, text: "I'm doing great. How about you?" },
-];
+function createMessages(speakers: Speaker[]): Message[] {
+  return [
+    { id: id(), speaker_id: speakers[0].id, text: "" },
+    { id: id(), speaker_id: speakers[1].id, text: "" },
+  ];
+}
 
 function slugify(value: string) {
   return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") || "conversation";
@@ -35,6 +48,33 @@ function formatWhen(iso: string) {
   }
 }
 
+function IconButton({
+  label,
+  active,
+  onClick,
+  children,
+  disabled,
+}: {
+  label: string;
+  active?: boolean;
+  onClick: () => void;
+  children: ReactNode;
+  disabled?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      className={`icon-btn ${active ? "active" : ""}`}
+      aria-label={label}
+      title={label}
+      disabled={disabled}
+      onClick={onClick}
+    >
+      {children}
+    </button>
+  );
+}
+
 function AutoTextarea({
   value,
   onChange,
@@ -51,7 +91,7 @@ function AutoTextarea({
     const el = ref.current;
     if (!el) return;
     el.style.height = "0px";
-    el.style.height = `${Math.max(44, el.scrollHeight)}px`;
+    el.style.height = `${Math.max(40, el.scrollHeight)}px`;
   }, [value]);
   return (
     <textarea
@@ -65,12 +105,15 @@ function AutoTextarea({
   );
 }
 
+type PanelId = "import" | "history" | null;
+
 export default function App() {
+  const bootSpeakers = useMemo(() => createSpeakers(), []);
   const [voices, setVoices] = useState<Voice[]>([]);
-  const [speakers, setSpeakers] = useState(initialSpeakers);
-  const [messages, setMessages] = useState(() => initialMessages(initialSpeakers));
+  const [speakers, setSpeakers] = useState(bootSpeakers);
+  const [messages, setMessages] = useState(() => createMessages(bootSpeakers));
   const [pause, setPause] = useState(2.5);
-  const [topic, setTopic] = useState("My dialogue");
+  const [topic, setTopic] = useState("");
   const [importText, setImportText] = useState("");
   const [audioUrl, setAudioUrl] = useState<string>();
   const [audioName, setAudioName] = useState<string>();
@@ -81,7 +124,10 @@ export default function App() {
   const [job, setJob] = useState<GenerateJob | null>(null);
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
-  const [showHelp, setShowHelp] = useState(true);
+  const [showHelp, setShowHelp] = useState(false);
+  const [theme, setTheme] = useState<ThemeId>(() => loadTheme());
+  const [mode, setMode] = useState<ModeId>(() => loadMode());
+  const [panel, setPanel] = useState<PanelId>(null);
 
   const speakerById = useMemo(() => new Map(speakers.map((s) => [s.id, s])), [speakers]);
   const speakerSide = useMemo(() => {
@@ -89,6 +135,10 @@ export default function App() {
     speakers.forEach((speaker, index) => map.set(speaker.id, index % 2 === 0 ? "left" : "right"));
     return map;
   }, [speakers]);
+
+  useEffect(() => {
+    applyAppearance(theme, mode);
+  }, [theme, mode]);
 
   useEffect(() => {
     api.voices().then(setVoices).catch((e) => setError(e.message));
@@ -112,19 +162,53 @@ export default function App() {
     });
 
   const makeProject = (): Project => ({
-    id: slugify(topic),
-    name: topic,
-    topic,
+    id: slugify(topic || "conversation"),
+    name: topic || "conversation",
+    topic: topic || "conversation",
     speakers,
     messages,
     speaker_change_pause: pause,
     audio_url: audioUrl,
   });
 
+  function cycleTheme() {
+    const index = THEMES.findIndex((item) => item.id === theme);
+    const next = THEMES[(index + 1) % THEMES.length];
+    setTheme(next.id);
+    setStatus(`Theme: ${next.label}`);
+  }
+
+  function togglePanel(next: PanelId) {
+    setPanel((current) => (current === next ? null : next));
+  }
+
+  function resetAll() {
+    const fresh = createSpeakers();
+    setSpeakers(fresh);
+    setMessages(createMessages(fresh));
+    setTopic("");
+    setImportText("");
+    setPause(2.5);
+    setAudioUrl(undefined);
+    setAudioName(undefined);
+    setMp3Url(undefined);
+    setMp3Name(undefined);
+    setJob(null);
+    setBusy(false);
+    setError("");
+    setStatus("");
+    setPanel(null);
+    setShowHelp(false);
+  }
+
   function removeSpeaker(speakerId: string) {
     const remaining = speakers.filter((s) => s.id !== speakerId);
     if (!remaining.length) {
       setError("Keep at least one speaker.");
+      return;
+    }
+    if (!hasMixedGenders(remaining, voices)) {
+      setError("Cannot remove that speaker — cast must stay mixed female and male.");
       return;
     }
     const fallback = remaining[0].id;
@@ -140,13 +224,10 @@ export default function App() {
     try {
       setError("");
       setBusy(true);
-      setStatus("Generating preview…");
       const result = await api.preview(text, speaker.voice_id, speaker.speed);
       new Audio(api.base + result.url).play();
-      setStatus("Preview ready");
     } catch (e) {
       setError((e as Error).message);
-      setStatus("");
     } finally {
       setBusy(false);
     }
@@ -159,7 +240,11 @@ export default function App() {
       return;
     }
     if (!topic.trim()) {
-      setError("Enter a topic so the final file can be named.");
+      setError("Enter a topic for the file name.");
+      return;
+    }
+    if (!hasMixedGenders(speakers, voices)) {
+      setError("Speakers must mix female and male voices.");
       return;
     }
     try {
@@ -179,7 +264,7 @@ export default function App() {
       setAudioName(latest.filename || undefined);
       setMp3Url(latest.mp3_url || undefined);
       setMp3Name(latest.mp3_filename || undefined);
-      setStatus("Conversation ready");
+      setStatus("Ready");
       await refreshHistory();
     } catch (e) {
       setError((e as Error).message);
@@ -202,11 +287,8 @@ export default function App() {
             .filter((name) => !byName.has(name.toLowerCase())),
         ),
       ];
-      let nextSpeakers = speakers;
       if (missing.length) {
-        setError(
-          `Assign a voice to new speaker${missing.length > 1 ? "s" : ""}: ${missing.join(", ")}. They were added with the default voice for you to review.`,
-        );
+        setError(`New speakers added — set their voices: ${missing.join(", ")}`);
         const additions = missing.map((name) => ({
           id: id(),
           name,
@@ -214,8 +296,7 @@ export default function App() {
           speed: 1,
         }));
         additions.forEach((s) => byName.set(s.name.toLowerCase(), s));
-        nextSpeakers = [...speakers, ...additions];
-        setSpeakers(nextSpeakers);
+        setSpeakers([...speakers, ...additions]);
       }
       setMessages(
         parsed.map((p) => ({
@@ -225,9 +306,45 @@ export default function App() {
         })),
       );
       setImportText("");
+      setPanel(null);
     } catch (e) {
       setError((e as Error).message);
     }
+  }
+
+  function changeSpeakerVoice(speakerId: string, voiceId: string) {
+    const next = speakers.map((speaker) =>
+      speaker.id === speakerId ? { ...speaker, voice_id: voiceId } : speaker,
+    );
+    if (!hasMixedGenders(next, voices)) {
+      setError("Speakers must mix female and male voices.");
+      return;
+    }
+    setError("");
+    setSpeakers(next);
+  }
+
+  function randomizeOne(speakerId: string) {
+    const voice = randomVoiceForSpeaker(speakerId, speakers, voices);
+    if (!voice) {
+      setError("No alternate voice available while keeping a mixed cast.");
+      return;
+    }
+    changeSpeakerVoice(speakerId, voice.id);
+  }
+
+  function randomizeAll() {
+    if (speakers.length < 2) {
+      setError("Need at least two speakers.");
+      return;
+    }
+    const next = randomizeSpeakerVoices(speakers, voices);
+    if (!hasMixedGenders(next, voices)) {
+      setError("Could not build a mixed female/male cast.");
+      return;
+    }
+    setSpeakers(next);
+    setError("");
   }
 
   async function deleteHistoryItem(item: HistoryItem) {
@@ -240,61 +357,153 @@ export default function App() {
         setMp3Name(undefined);
       }
       await refreshHistory();
-      setStatus(`Deleted “${item.topic}”`);
     } catch (e) {
       setError((e as Error).message);
     }
   }
 
+  const generating = job?.status === "queued" || job?.status === "running";
+
   return (
-    <main>
-      <header>
-        <div>
-          <span className="eyebrow">LOCAL · PRIVATE · KOKORO</span>
-          <h1>Dialogue Studio</h1>
-        </div>
-        <div className="header-actions">
-          <button className="ghost" type="button" onClick={() => setShowHelp((value) => !value)}>
-            {showHelp ? "Hide guide" : "Show guide"}
-          </button>
-          <button className="primary" disabled={busy} onClick={generate}>
-            Generate conversation
+    <main className="app-shell">
+      <header className="topbar">
+        <h1>Dialogue Studio</h1>
+
+        <input
+          className="topic-input"
+          value={topic}
+          onChange={(e) => setTopic(e.target.value)}
+          placeholder="Topic / file name"
+          aria-label="Topic"
+        />
+
+        <div className="toolbar">
+          <IconButton
+            label={mode === "day" ? "Night mode" : "Day mode"}
+            onClick={() => setMode((value) => (value === "day" ? "night" : "day"))}
+          >
+            {mode === "day" ? "☾" : "☀"}
+          </IconButton>
+          <IconButton label={`Theme: ${theme} (click to change)`} onClick={cycleTheme}>
+            ◈
+          </IconButton>
+          <IconButton label="Guide" active={showHelp} onClick={() => setShowHelp((value) => !value)}>
+            ?
+          </IconButton>
+          <IconButton label="Import" active={panel === "import"} onClick={() => togglePanel("import")}>
+            ↧
+          </IconButton>
+          <IconButton label="History" active={panel === "history"} onClick={() => togglePanel("history")}>
+            ≡
+          </IconButton>
+          <IconButton label="Reset everything" onClick={resetAll}>
+            ↺
+          </IconButton>
+          <button className="primary generate-btn" disabled={busy} onClick={generate}>
+            Generate
           </button>
         </div>
       </header>
 
-      <section className="topic-bar panel">
-        <label>
-          Topic / file name
-          <input
-            value={topic}
-            onChange={(e) => setTopic(e.target.value)}
-            placeholder="e.g. Morning coffee chat"
-            aria-label="Topic"
-          />
-        </label>
-        <p>
-          Files will be saved as <code>{slugify(topic) || "conversation"}.wav</code> and{" "}
-          <code>{slugify(topic) || "conversation"}.mp3</code>
-        </p>
+      <section className="speaker-bar">
+        <div className="speaker-bar-head">
+          <span>Speakers</span>
+          <div className="speaker-bar-actions">
+            <label className="pause-inline" title="Pause when speaker changes">
+              Pause
+              <select value={pause} onChange={(e) => setPause(+e.target.value)}>
+                {[1, 1.5, 2, 2.5, 3, 4].map((v) => (
+                  <option value={v} key={v}>
+                    {v}s
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button type="button" disabled={!voices.length || speakers.length < 2} onClick={randomizeAll}>
+              🎲 Mix
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                const defaults = nextSpeakerDefaults(speakers, voices);
+                setSpeakers((all) => [
+                  ...all,
+                  { id: id(), name: defaults.name, voice_id: defaults.voice_id, speed: 1 },
+                ]);
+              }}
+            >
+              +
+            </button>
+          </div>
+        </div>
+        <div className="speaker-cards">
+          {speakers.map((speaker) => {
+            const allowed = allowedGendersFor(speaker.id, speakers, voices);
+            const voiceOptions = voices.filter((voice) =>
+              allowed.includes(voice.gender as "Female" | "Male"),
+            );
+            return (
+              <div className="speaker-card" key={speaker.id}>
+                <input
+                  value={speaker.name}
+                  onChange={(e) =>
+                    setSpeakers((all) =>
+                      all.map((s) => (s.id === speaker.id ? { ...s, name: e.target.value } : s)),
+                    )
+                  }
+                  aria-label="Speaker name"
+                />
+                <select
+                  value={speaker.voice_id}
+                  onChange={(e) => changeSpeakerVoice(speaker.id, e.target.value)}
+                  aria-label="Voice"
+                >
+                  {voiceOptions.map((v) => (
+                    <option value={v.id} key={v.id}>
+                      {v.name} · {v.gender}
+                    </option>
+                  ))}
+                </select>
+                <div className="speaker-card-foot">
+                  <span>{genderOf(speaker.voice_id, voices)}</span>
+                  <input
+                    type="number"
+                    min="0.5"
+                    max="2"
+                    step="0.1"
+                    value={speaker.speed}
+                    title="Speed"
+                    onChange={(e) =>
+                      setSpeakers((all) =>
+                        all.map((s) => (s.id === speaker.id ? { ...s, speed: +e.target.value } : s)),
+                      )
+                    }
+                  />
+                  <IconButton label="Random voice" onClick={() => randomizeOne(speaker.id)} disabled={!voices.length}>
+                    🎲
+                  </IconButton>
+                  <IconButton
+                    label="Test voice"
+                    disabled={busy}
+                    onClick={() => preview("Hello, this is a preview of this voice.", speaker)}
+                  >
+                    ▶
+                  </IconButton>
+                  <IconButton label="Remove speaker" onClick={() => removeSpeaker(speaker.id)}>
+                    ×
+                  </IconButton>
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </section>
 
       {showHelp && (
-        <section className="panel guide">
-          <h2>Expression &amp; pause guide</h2>
-          <p>Put these tags inside any message. They are processed before synthesis:</p>
-          <ul>
-            <li><code>[pause]</code> — short silence (~0.8s)</li>
-            <li><code>[pause:1.5s]</code> — exact silence (0.2–5s)</li>
-            <li><code>[laugh]</code> / <code>[laughter]</code> — light laughter vocalization</li>
-            <li><code>[sigh]</code>, <code>[breath]</code>, <code>[gasp]</code>, <code>[cough]</code></li>
-          </ul>
-          <p>
-            Natural pauses also come from punctuation (<code>...</code>, commas, periods) and from the
-            speaker-change pause in Timing. Example:{" "}
-            <em>That was hilarious [laugh] [pause:1s] Okay, seriously though...</em>
-          </p>
-        </section>
+        <p className="hint">
+          Use <code>[pause]</code>, <code>[pause:1.5s]</code>, <code>[laugh]</code>, <code>[sigh]</code> in text.
+          Voices must stay mixed female + male.
+        </p>
       )}
 
       {error && (
@@ -305,43 +514,25 @@ export default function App() {
           </button>
         </div>
       )}
-      {job && (job.status === "queued" || job.status === "running") && (
-        <section className="panel progress-panel">
+
+      {generating && job && (
+        <section className="progress-inline">
           <div className="progress-meta">
             <strong>{job.stage}</strong>
-            <span>{formatEta(job.eta_seconds)}</span>
-          </div>
-          <div className="progress-track" aria-label="Generation progress">
-            <div className="progress-fill" style={{ width: `${Math.max(job.percent, 4)}%` }} />
-          </div>
-          <div className="progress-meta subtle">
             <span>
-              {job.current}/{job.total || messages.length} turns
+              {formatEta(job.eta_seconds)} · {Math.round(job.percent)}%
             </span>
-            <span>{Math.round(job.percent)}%</span>
+          </div>
+          <div className="progress-track">
+            <div className="progress-fill" style={{ width: `${Math.max(job.percent, 4)}%` }} />
           </div>
         </section>
       )}
-      {status && <div className="notice">{status}</div>}
 
-      <section className="layout">
-        <div className="editor">
-          <section className="panel import">
-            <h2>Import conversation</h2>
-            <form onSubmit={importConversation}>
-              <AutoTextarea
-                value={importText}
-                onChange={setImportText}
-                placeholder={"Sarah: Hey, are you coming tonight?\nJohn: I'll be there around eight."}
-              />
-              <button type="submit" disabled={busy || !importText.trim()}>
-                Parse text
-              </button>
-            </form>
-          </section>
-
+      <div className="workspace">
+        <section className="chat-pane">
           <div className="section-heading">
-            <h2>Conversation</h2>
+            <h2>Chat</h2>
             <button
               type="button"
               onClick={() =>
@@ -355,7 +546,7 @@ export default function App() {
                 ])
               }
             >
-              + Add message
+              + Message
             </button>
           </div>
 
@@ -379,10 +570,10 @@ export default function App() {
                       </select>
                       <span>{speaker?.voice_id}</span>
                       <div className="bubble-tools">
-                        <button type="button" title="Move up" onClick={() => move(index, -1)}>
+                        <button type="button" title="Up" onClick={() => move(index, -1)}>
                           ↑
                         </button>
-                        <button type="button" title="Move down" onClick={() => move(index, 1)}>
+                        <button type="button" title="Down" onClick={() => move(index, 1)}>
                           ↓
                         </button>
                         <button
@@ -411,7 +602,7 @@ export default function App() {
                     <AutoTextarea
                       className="bubble-input"
                       value={message.text}
-                      placeholder="What should this person say? You can use [laugh] or [pause:1s]"
+                      placeholder="Write dialogue…"
                       onChange={(value) => updateMessage(message, { text: value })}
                     />
                     <button
@@ -420,161 +611,105 @@ export default function App() {
                       disabled={!message.text.trim() || !speaker || busy}
                       onClick={() => speaker && preview(message.text, speaker)}
                     >
-                      ▶ Preview
+                      ▶
                     </button>
                   </div>
                 </article>
               );
             })}
           </div>
-        </div>
+        </section>
 
-        <aside>
-          <section className="panel">
-            <h2>Speakers</h2>
-            {speakers.map((speaker) => (
-              <div className="speaker" key={speaker.id}>
-                <input
-                  value={speaker.name}
-                  onChange={(e) =>
-                    setSpeakers((all) =>
-                      all.map((s) => (s.id === speaker.id ? { ...s, name: e.target.value } : s)),
-                    )
-                  }
-                />
-                <select
-                  value={speaker.voice_id}
-                  onChange={(e) =>
-                    setSpeakers((all) =>
-                      all.map((s) => (s.id === speaker.id ? { ...s, voice_id: e.target.value } : s)),
-                    )
-                  }
-                >
-                  {voices.map((v) => (
-                    <option value={v.id} key={v.id}>
-                      {v.name} · {v.gender} · {v.accent}
-                    </option>
-                  ))}
-                </select>
-                <label>
-                  Speed
-                  <input
-                    type="number"
-                    min="0.5"
-                    max="2"
-                    step="0.1"
-                    value={speaker.speed}
-                    onChange={(e) =>
-                      setSpeakers((all) =>
-                        all.map((s) => (s.id === speaker.id ? { ...s, speed: +e.target.value } : s)),
-                      )
-                    }
-                  />
-                </label>
-                <button type="button" disabled={busy} onClick={() => preview("Hello, this is a preview of this voice.", speaker)}>
-                  ▶ Test voice
-                </button>
-                <button type="button" className="danger" onClick={() => removeSpeaker(speaker.id)}>
-                  Remove
-                </button>
-              </div>
-            ))}
-            <button
-              type="button"
-              onClick={() =>
-                setSpeakers((all) => [
-                  ...all,
-                  { id: id(), name: "New speaker", voice_id: "af_heart", speed: 1 },
-                ])
-              }
-            >
-              + Add speaker
-            </button>
-          </section>
-
-          <section className="panel">
-            <h2>Timing</h2>
-            <label>
-              Speaker change pause
-              <select value={pause} onChange={(e) => setPause(+e.target.value)}>
-                {[1, 1.5, 2, 2.5, 3, 4].map((v) => (
-                  <option value={v} key={v}>
-                    {v} seconds
-                  </option>
-                ))}
-              </select>
-            </label>
-            <p>Same-speaker turns get a short natural pause. Use <code>[pause:1s]</code> inside text for extra silence.</p>
-          </section>
-
-          {audioUrl && (
+        <aside className="side-pane">
+          {audioUrl ? (
             <section className="panel player">
-              <h2>Ready · {audioName || "conversation.wav"}</h2>
+              <h2>{audioName || "Ready"}</h2>
               <audio controls src={api.base + audioUrl} />
               <div className="download-row">
                 <a className="primary download" href={api.base + audioUrl} download={audioName || "conversation.wav"}>
-                  ↓ WAV
+                  WAV
                 </a>
-                {mp3Url ? (
+                {mp3Url && (
                   <a className="primary download" href={api.base + mp3Url} download={mp3Name || "conversation.mp3"}>
-                    ↓ MP3
+                    MP3
                   </a>
-                ) : (
-                  <button type="button" className="ghost" disabled>
-                    MP3 unavailable
-                  </button>
                 )}
               </div>
             </section>
+          ) : (
+            <section className="panel empty-side">
+              <p>Generate to get WAV + MP3 here.</p>
+            </section>
           )}
-
-          <section className="panel history">
-            <h2>History</h2>
-            {!history.length && <p>Generated conversations will show up here.</p>}
-            <div className="history-list">
-              {history.map((item) => (
-                <div className="history-item" key={item.id}>
-                  <div>
-                    <strong>{item.topic}</strong>
-                    <span>
-                      {item.filename}
-                      {item.mp3_filename ? ` · ${item.mp3_filename}` : ""} · {item.messages} turns ·{" "}
-                      {formatWhen(item.created_at)}
-                    </span>
-                  </div>
-                  <div className="history-actions">
-                    <a className="ghost link-btn" href={api.base + item.url} download={item.filename}>
-                      WAV
-                    </a>
-                    {item.mp3_url && item.mp3_filename && (
-                      <a className="ghost link-btn" href={api.base + item.mp3_url} download={item.mp3_filename}>
-                        MP3
-                      </a>
-                    )}
-                    <button
-                      type="button"
-                      className="ghost"
-                      onClick={() => {
-                        setAudioUrl(item.url);
-                        setAudioName(item.filename);
-                        setMp3Url(item.mp3_url || undefined);
-                        setMp3Name(item.mp3_filename || undefined);
-                        setTopic(item.topic);
-                        setStatus(`Loaded “${item.topic}”`);
-                      }}
-                    >
-                      Open
-                    </button>
-                    <button type="button" className="danger" onClick={() => deleteHistoryItem(item)}>
-                      Delete
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </section>
+          {status && !generating && <div className="notice tight">{status}</div>}
         </aside>
-      </section>
+      </div>
+
+      {panel && (
+        <div className="drawer-backdrop" onClick={() => setPanel(null)}>
+          <aside className="drawer" onClick={(e) => e.stopPropagation()}>
+            <div className="drawer-head">
+              <h2>{panel === "import" ? "Import" : "History"}</h2>
+              <IconButton label="Close" onClick={() => setPanel(null)}>
+                ×
+              </IconButton>
+            </div>
+
+            {panel === "import" && (
+              <form className="drawer-body" onSubmit={importConversation}>
+                <AutoTextarea
+                  value={importText}
+                  onChange={setImportText}
+                  placeholder={"Sarah: Hello\nJohn: Hi there"}
+                />
+                <button type="submit" className="primary" disabled={busy || !importText.trim()}>
+                  Parse into chat
+                </button>
+              </form>
+            )}
+
+            {panel === "history" && (
+              <div className="drawer-body history-list">
+                {!history.length && <p className="muted">No exports yet.</p>}
+                {history.map((item) => (
+                  <div className="history-item" key={item.id}>
+                    <div>
+                      <strong>{item.topic}</strong>
+                      <span>{formatWhen(item.created_at)}</span>
+                    </div>
+                    <div className="history-actions">
+                      <a className="link-btn" href={api.base + item.url} download={item.filename}>
+                        WAV
+                      </a>
+                      {item.mp3_url && item.mp3_filename && (
+                        <a className="link-btn" href={api.base + item.mp3_url} download={item.mp3_filename}>
+                          MP3
+                        </a>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAudioUrl(item.url);
+                          setAudioName(item.filename);
+                          setMp3Url(item.mp3_url || undefined);
+                          setMp3Name(item.mp3_filename || undefined);
+                          setTopic(item.topic);
+                          setPanel(null);
+                        }}
+                      >
+                        Open
+                      </button>
+                      <button type="button" className="danger" onClick={() => deleteHistoryItem(item)}>
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </aside>
+        </div>
+      )}
     </main>
   );
 }
