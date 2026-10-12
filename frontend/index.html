@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-theme="mono" data-mode="day">
+<html lang="en" data-theme="studio" data-mode="day">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -8,9 +8,8 @@
     <script>
       (() => {
         try {
-          const theme = localStorage.getItem("dialogue-studio-theme") || "mono";
           const mode = localStorage.getItem("dialogue-studio-mode") === "night" ? "night" : "day";
-          document.documentElement.setAttribute("data-theme", theme);
+          document.documentElement.setAttribute("data-theme", "studio");
           document.documentElement.setAttribute("data-mode", mode);
         } catch (_) {}
       })();

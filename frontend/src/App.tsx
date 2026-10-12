@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { api } from "./api";
-import { applyAppearance, loadMode, loadTheme, THEMES, type ModeId, type ThemeId } from "./themes";
-import type { GenerateJob, HistoryItem, Message, Project, Speaker, Voice } from "./types";
+import { applyAppearance, loadMode, type ModeId } from "./themes";
+import type { AppMode, GenerateJob, HistoryItem, LecturePlan, Message, Project, Speaker, Voice } from "./types";
 import {
   allowedGendersFor,
   genderOf,
@@ -48,29 +48,109 @@ function formatWhen(iso: string) {
   }
 }
 
-function IconButton({
+function Icon({ name }: { name: "sun" | "moon" | "help" | "import" | "history" | "reset" | "play" | "random" | "close" | "add" }) {
+  const common = { width: 16, height: 16, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.75, strokeLinecap: "round" as const, strokeLinejoin: "round" as const, "aria-hidden": true };
+  switch (name) {
+    case "sun":
+      return (
+        <svg {...common}>
+          <circle cx="12" cy="12" r="4" />
+          <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
+        </svg>
+      );
+    case "moon":
+      return (
+        <svg {...common}>
+          <path d="M21 14.5A8.5 8.5 0 1 1 9.5 3 7 7 0 0 0 21 14.5z" />
+        </svg>
+      );
+    case "help":
+      return (
+        <svg {...common}>
+          <circle cx="12" cy="12" r="9" />
+          <path d="M9.6 9a2.4 2.4 0 1 1 3.3 2.2c-.8.4-1.4 1-1.4 1.8V14" />
+          <circle cx="12" cy="17" r=".8" fill="currentColor" stroke="none" />
+        </svg>
+      );
+    case "import":
+      return (
+        <svg {...common}>
+          <path d="M12 3v12" />
+          <path d="M8 11l4 4 4-4" />
+          <path d="M5 19h14" />
+        </svg>
+      );
+    case "history":
+      return (
+        <svg {...common}>
+          <circle cx="12" cy="12" r="9" />
+          <path d="M12 7v5l3 2" />
+        </svg>
+      );
+    case "reset":
+      return (
+        <svg {...common}>
+          <path d="M3 12a9 9 0 1 0 3-6.7" />
+          <path d="M3 4v5h5" />
+        </svg>
+      );
+    case "play":
+      return (
+        <svg {...common}>
+          <path d="M8 5.5v13l11-6.5z" fill="currentColor" stroke="none" />
+        </svg>
+      );
+    case "random":
+      return (
+        <svg {...common}>
+          <path d="M4 7h4l3 5 3-5h6" />
+          <path d="M17 4l3 3-3 3" />
+          <path d="M4 17h4l2.5-3.5" />
+          <path d="M14.5 13.5 17 17h3" />
+          <path d="M17 14l3 3-3 3" />
+        </svg>
+      );
+    case "close":
+      return (
+        <svg {...common}>
+          <path d="M6 6l12 12M18 6 6 18" />
+        </svg>
+      );
+    case "add":
+      return (
+        <svg {...common}>
+          <path d="M12 5v14M5 12h14" />
+        </svg>
+      );
+  }
+}
+
+function ActionButton({
   label,
   active,
   onClick,
   children,
   disabled,
+  variant = "ghost",
 }: {
   label: string;
   active?: boolean;
   onClick: () => void;
   children: ReactNode;
   disabled?: boolean;
+  variant?: "ghost" | "primary" | "danger";
 }) {
   return (
     <button
       type="button"
-      className={`icon-btn ${active ? "active" : ""}`}
+      className={`action-btn ${variant} ${active ? "active" : ""}`}
       aria-label={label}
       title={label}
       disabled={disabled}
       onClick={onClick}
     >
       {children}
+      <span>{label}</span>
     </button>
   );
 }
@@ -125,9 +205,14 @@ export default function App() {
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
   const [showHelp, setShowHelp] = useState(false);
-  const [theme, setTheme] = useState<ThemeId>(() => loadTheme());
   const [mode, setMode] = useState<ModeId>(() => loadMode());
   const [panel, setPanel] = useState<PanelId>(null);
+  const [appMode, setAppMode] = useState<AppMode>("dialogue");
+  const [lectureText, setLectureText] = useState("");
+  const [narratorVoice, setNarratorVoice] = useState("af_heart");
+  const [narratorSpeed, setNarratorSpeed] = useState(1);
+  const [sectionPause, setSectionPause] = useState(0.85);
+  const [lecturePlan, setLecturePlan] = useState<LecturePlan | null>(null);
 
   const speakerById = useMemo(() => new Map(speakers.map((s) => [s.id, s])), [speakers]);
   const speakerSide = useMemo(() => {
@@ -137,13 +222,32 @@ export default function App() {
   }, [speakers]);
 
   useEffect(() => {
-    applyAppearance(theme, mode);
-  }, [theme, mode]);
+    applyAppearance("studio", mode);
+  }, [mode]);
 
   useEffect(() => {
-    api.voices().then(setVoices).catch((e) => setError(e.message));
+    api.voices().then((list) => {
+      setVoices(list);
+      if (list.length && !list.some((voice) => voice.id === narratorVoice)) {
+        setNarratorVoice(list[0].id);
+      }
+    }).catch((e) => setError(e.message));
     refreshHistory().catch((e) => setError(e.message));
   }, []);
+
+  useEffect(() => {
+    if (appMode !== "lecture" || !lectureText.trim()) {
+      setLecturePlan(null);
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      api
+        .lecturePlan(lectureText)
+        .then(setLecturePlan)
+        .catch(() => setLecturePlan(null));
+    }, 450);
+    return () => window.clearTimeout(timer);
+  }, [lectureText, appMode]);
 
   async function refreshHistory() {
     setHistory(await api.listHistory());
@@ -171,13 +275,6 @@ export default function App() {
     audio_url: audioUrl,
   });
 
-  function cycleTheme() {
-    const index = THEMES.findIndex((item) => item.id === theme);
-    const next = THEMES[(index + 1) % THEMES.length];
-    setTheme(next.id);
-    setStatus(`Theme: ${next.label}`);
-  }
-
   function togglePanel(next: PanelId) {
     setPanel((current) => (current === next ? null : next));
   }
@@ -189,6 +286,11 @@ export default function App() {
     setTopic("");
     setImportText("");
     setPause(2.5);
+    setLectureText("");
+    setLecturePlan(null);
+    setNarratorVoice("af_heart");
+    setNarratorSpeed(1);
+    setSectionPause(0.85);
     setAudioUrl(undefined);
     setAudioName(undefined);
     setMp3Url(undefined);
@@ -199,6 +301,23 @@ export default function App() {
     setStatus("");
     setPanel(null);
     setShowHelp(false);
+  }
+
+  async function pollJob(started: GenerateJob) {
+    setJob({ ...started, percent: 1, stage: "Queued…" });
+    let latest = started;
+    while (latest.status === "queued" || latest.status === "running") {
+      await new Promise((resolve) => setTimeout(resolve, 450));
+      latest = await api.generateStatus(started.id);
+      setJob(latest);
+    }
+    if (latest.status === "error") throw new Error(latest.error || "Generation failed");
+    setAudioUrl(latest.url || undefined);
+    setAudioName(latest.filename || undefined);
+    setMp3Url(latest.mp3_url || undefined);
+    setMp3Name(latest.mp3_filename || undefined);
+    setStatus("Ready");
+    await refreshHistory();
   }
 
   function removeSpeaker(speakerId: string) {
@@ -234,13 +353,39 @@ export default function App() {
   }
 
   async function generate() {
+    if (!topic.trim()) {
+      setError("Enter a topic for the file name.");
+      return;
+    }
+    if (appMode === "lecture") {
+      if (!lectureText.trim()) {
+        setError("Paste your lecture or presentation script first.");
+        return;
+      }
+      try {
+        setError("");
+        setBusy(true);
+        setStatus("");
+        const started = await api.startLecture({
+          text: lectureText,
+          topic: topic.trim(),
+          voice_id: narratorVoice,
+          speed: narratorSpeed,
+          section_pause: sectionPause,
+        });
+        await pollJob(started);
+      } catch (e) {
+        setError((e as Error).message);
+        setStatus("");
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
+
     const empty = messages.find((message) => !message.text.trim());
     if (empty) {
       setError("Fill in every dialogue turn before generating.");
-      return;
-    }
-    if (!topic.trim()) {
-      setError("Enter a topic for the file name.");
       return;
     }
     if (!hasMixedGenders(speakers, voices)) {
@@ -252,20 +397,7 @@ export default function App() {
       setBusy(true);
       setStatus("");
       const started = await api.startGenerate(makeProject());
-      setJob({ ...started, percent: 1, stage: "Queued…" });
-      let latest = started;
-      while (latest.status === "queued" || latest.status === "running") {
-        await new Promise((resolve) => setTimeout(resolve, 450));
-        latest = await api.generateStatus(started.id);
-        setJob(latest);
-      }
-      if (latest.status === "error") throw new Error(latest.error || "Generation failed");
-      setAudioUrl(latest.url || undefined);
-      setAudioName(latest.filename || undefined);
-      setMp3Url(latest.mp3_url || undefined);
-      setMp3Name(latest.mp3_filename || undefined);
-      setStatus("Ready");
-      await refreshHistory();
+      await pollJob(started);
     } catch (e) {
       setError((e as Error).message);
       setStatus("");
@@ -366,45 +498,72 @@ export default function App() {
 
   return (
     <main className="app-shell">
-      <header className="topbar">
-        <h1>Dialogue Studio</h1>
+      <header className="chrome">
+        <div className="chrome-top">
+          <div className="brand-block">
+            <p className="eyebrow">Local · Private · Kokoro</p>
+            <h1>Dialogue Studio</h1>
+          </div>
 
-        <input
-          className="topic-input"
-          value={topic}
-          onChange={(e) => setTopic(e.target.value)}
-          placeholder="Topic / file name"
-          aria-label="Topic"
-        />
+          <div className="mode-switch" role="tablist" aria-label="App mode">
+            <button
+              type="button"
+              className={appMode === "dialogue" ? "active" : ""}
+              onClick={() => setAppMode("dialogue")}
+            >
+              Dialogue
+            </button>
+            <button
+              type="button"
+              className={appMode === "lecture" ? "active" : ""}
+              onClick={() => setAppMode("lecture")}
+            >
+              Lecture
+            </button>
+          </div>
 
-        <div className="toolbar">
-          <IconButton
-            label={mode === "day" ? "Night mode" : "Day mode"}
-            onClick={() => setMode((value) => (value === "day" ? "night" : "day"))}
-          >
-            {mode === "day" ? "☾" : "☀"}
-          </IconButton>
-          <IconButton label={`Theme: ${theme} (click to change)`} onClick={cycleTheme}>
-            ◈
-          </IconButton>
-          <IconButton label="Guide" active={showHelp} onClick={() => setShowHelp((value) => !value)}>
-            ?
-          </IconButton>
-          <IconButton label="Import" active={panel === "import"} onClick={() => togglePanel("import")}>
-            ↧
-          </IconButton>
-          <IconButton label="History" active={panel === "history"} onClick={() => togglePanel("history")}>
-            ≡
-          </IconButton>
-          <IconButton label="Reset everything" onClick={resetAll}>
-            ↺
-          </IconButton>
           <button className="primary generate-btn" disabled={busy} onClick={generate}>
-            Generate
+            Generate audio
           </button>
+        </div>
+
+        <div className="chrome-tools">
+          <label className="topic-field">
+            <span>Topic / file name</span>
+            <input
+              value={topic}
+              onChange={(e) => setTopic(e.target.value)}
+              placeholder="e.g. Morning meeting"
+              aria-label="Topic"
+            />
+          </label>
+
+          <div className="tool-row">
+            <ActionButton
+              label={mode === "day" ? "Night" : "Day"}
+              onClick={() => setMode((value) => (value === "day" ? "night" : "day"))}
+            >
+              <Icon name={mode === "day" ? "moon" : "sun"} />
+            </ActionButton>
+            <ActionButton label="Guide" active={showHelp} onClick={() => setShowHelp((value) => !value)}>
+              <Icon name="help" />
+            </ActionButton>
+            {appMode === "dialogue" && (
+              <ActionButton label="Import" active={panel === "import"} onClick={() => togglePanel("import")}>
+                <Icon name="import" />
+              </ActionButton>
+            )}
+            <ActionButton label="History" active={panel === "history"} onClick={() => togglePanel("history")}>
+              <Icon name="history" />
+            </ActionButton>
+            <ActionButton label="Reset" onClick={resetAll}>
+              <Icon name="reset" />
+            </ActionButton>
+          </div>
         </div>
       </header>
 
+      {appMode === "dialogue" ? (
       <section className="speaker-bar">
         <div className="speaker-bar-head">
           <span>Speakers</span>
@@ -420,7 +579,7 @@ export default function App() {
               </select>
             </label>
             <button type="button" disabled={!voices.length || speakers.length < 2} onClick={randomizeAll}>
-              🎲 Mix
+              <Icon name="random" /> Random mix
             </button>
             <button
               type="button"
@@ -432,7 +591,7 @@ export default function App() {
                 ]);
               }}
             >
-              +
+              <Icon name="add" /> Add speaker
             </button>
           </div>
         </div>
@@ -473,36 +632,104 @@ export default function App() {
                     step="0.1"
                     value={speaker.speed}
                     title="Speed"
+                    aria-label="Speed"
                     onChange={(e) =>
                       setSpeakers((all) =>
                         all.map((s) => (s.id === speaker.id ? { ...s, speed: +e.target.value } : s)),
                       )
                     }
                   />
-                  <IconButton label="Random voice" onClick={() => randomizeOne(speaker.id)} disabled={!voices.length}>
-                    🎲
-                  </IconButton>
-                  <IconButton
-                    label="Test voice"
+                  <ActionButton label="Random" onClick={() => randomizeOne(speaker.id)} disabled={!voices.length}>
+                    <Icon name="random" />
+                  </ActionButton>
+                  <ActionButton
+                    label="Test"
                     disabled={busy}
                     onClick={() => preview("Hello, this is a preview of this voice.", speaker)}
                   >
-                    ▶
-                  </IconButton>
-                  <IconButton label="Remove speaker" onClick={() => removeSpeaker(speaker.id)}>
-                    ×
-                  </IconButton>
+                    <Icon name="play" />
+                  </ActionButton>
+                  <ActionButton label="Remove" variant="danger" onClick={() => removeSpeaker(speaker.id)}>
+                    <Icon name="close" />
+                  </ActionButton>
                 </div>
               </div>
             );
           })}
         </div>
       </section>
+      ) : (
+      <section className="speaker-bar narrator-bar">
+        <div className="speaker-bar-head">
+          <span>Narrator</span>
+          <div className="speaker-bar-actions">
+            <label className="pause-inline" title="Pause between sections">
+              Section pause
+              <select value={sectionPause} onChange={(e) => setSectionPause(+e.target.value)}>
+                {[0.4, 0.6, 0.85, 1.2, 1.6, 2].map((v) => (
+                  <option value={v} key={v}>
+                    {v}s
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+        </div>
+        <div className="narrator-row">
+          <select value={narratorVoice} onChange={(e) => setNarratorVoice(e.target.value)} aria-label="Narrator voice">
+            {voices.map((v) => (
+              <option value={v.id} key={v.id}>
+                {v.name} · {v.gender} · {v.accent}
+              </option>
+            ))}
+          </select>
+          <label className="pause-inline">
+            Speed
+            <input
+              type="number"
+              min="0.5"
+              max="2"
+              step="0.1"
+              value={narratorSpeed}
+              onChange={(e) => setNarratorSpeed(+e.target.value)}
+            />
+          </label>
+          <ActionButton
+            label="Test voice"
+            disabled={busy || !voices.length}
+            onClick={() =>
+              preview("Welcome to this lecture. Today we will cover the main ideas clearly.", {
+                id: "narrator",
+                name: "Narrator",
+                voice_id: narratorVoice,
+                speed: narratorSpeed,
+              })
+            }
+          >
+            <Icon name="play" />
+          </ActionButton>
+          {lecturePlan && (
+            <span className="plan-meta">
+              {lecturePlan.count} sections · {lecturePlan.characters.toLocaleString()} chars
+            </span>
+          )}
+        </div>
+      </section>
+      )}
 
       {showHelp && (
         <p className="hint">
-          Use <code>[pause]</code>, <code>[pause:1.5s]</code>, <code>[laugh]</code>, <code>[sigh]</code> in text.
-          Voices must stay mixed female + male.
+          {appMode === "lecture" ? (
+            <>
+              Paste a long script. Blank lines become sections. Tags work too: <code>[pause]</code>,{" "}
+              <code>[pause:1.5s]</code>, <code>[laugh]</code>.
+            </>
+          ) : (
+            <>
+              Use <code>[pause]</code>, <code>[pause:1.5s]</code>, <code>[laugh]</code>, <code>[sigh]</code> in text.
+              Voices must stay mixed female + male.
+            </>
+          )}
         </p>
       )}
 
@@ -530,6 +757,7 @@ export default function App() {
       )}
 
       <div className="workspace">
+        {appMode === "dialogue" ? (
         <section className="chat-pane">
           <div className="section-heading">
             <h2>Chat</h2>
@@ -619,11 +847,53 @@ export default function App() {
             })}
           </div>
         </section>
+        ) : (
+        <section className="chat-pane lecture-pane">
+          <div className="section-heading">
+            <h2>Lecture script</h2>
+            <span className="plan-meta">
+              {lecturePlan
+                ? `${lecturePlan.count} sections · ~${Math.max(1, Math.round(lecturePlan.characters / 14))}s spoken est.`
+                : "Paste a long text"}
+            </span>
+          </div>
+          <textarea
+            className="lecture-editor"
+            value={lectureText}
+            onChange={(e) => setLectureText(e.target.value)}
+            placeholder={
+              "Paste your full lecture or presentation notes here.\n\n" +
+              "Use a blank line between paragraphs/sections.\n\n" +
+              "Example:\n\n" +
+              "Welcome everyone. Today we cover three ideas.\n\n" +
+              "First, the problem we are solving...\n\n" +
+              "Second, the approach...\n\n" +
+              "Finally, the takeaways. [pause:1s] Thank you."
+            }
+          />
+          {lecturePlan && lecturePlan.count > 0 && (
+            <div className="lecture-preview">
+              <strong>Sections preview</strong>
+              <ol>
+                {lecturePlan.chunks.slice(0, 8).map((chunk, index) => (
+                  <li key={`${index}-${chunk.slice(0, 24)}`}>
+                    {chunk.length > 140 ? `${chunk.slice(0, 140)}…` : chunk}
+                  </li>
+                ))}
+              </ol>
+              {lecturePlan.count > 8 && <p className="muted">+{lecturePlan.count - 8} more sections</p>}
+            </div>
+          )}
+        </section>
+        )}
 
         <aside className="side-pane">
           {audioUrl ? (
             <section className="panel player">
-              <h2>{audioName || "Ready"}</h2>
+              <div className="player-head">
+                <div className="audio-sphere" aria-hidden="true" />
+                <h2>{audioName || "Ready"}</h2>
+              </div>
               <audio controls src={api.base + audioUrl} />
               <div className="download-row">
                 <a className="primary download" href={api.base + audioUrl} download={audioName || "conversation.wav"}>
@@ -638,6 +908,7 @@ export default function App() {
             </section>
           ) : (
             <section className="panel empty-side">
+              <div className="audio-sphere" aria-hidden="true" />
               <p>Generate to get WAV + MP3 here.</p>
             </section>
           )}
@@ -650,9 +921,9 @@ export default function App() {
           <aside className="drawer" onClick={(e) => e.stopPropagation()}>
             <div className="drawer-head">
               <h2>{panel === "import" ? "Import" : "History"}</h2>
-              <IconButton label="Close" onClick={() => setPanel(null)}>
-                ×
-              </IconButton>
+              <ActionButton label="Close" onClick={() => setPanel(null)}>
+                <Icon name="close" />
+              </ActionButton>
             </div>
 
             {panel === "import" && (

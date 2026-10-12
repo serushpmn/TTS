@@ -1,4 +1,4 @@
-import type { GenerateJob, HistoryItem, Project, Voice } from "./types";
+import type { GenerateJob, HistoryItem, LecturePlan, LectureRequest, Project, Voice } from "./types";
 
 const BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
@@ -54,6 +54,16 @@ export const api = {
         speaker_change_pause: project.speaker_change_pause,
         topic: project.topic || project.name,
       }),
+    }),
+  lecturePlan: (text: string) =>
+    request<LecturePlan>("/api/lecture/plan", {
+      method: "POST",
+      body: JSON.stringify({ text }),
+    }),
+  startLecture: (payload: LectureRequest) =>
+    request<GenerateJob>("/api/lecture", {
+      method: "POST",
+      body: JSON.stringify(payload),
     }),
   generateStatus: (jobId: string) => request<GenerateJob>(`/api/generate/${jobId}`),
   listHistory: () => request<HistoryItem[]>("/api/history"),

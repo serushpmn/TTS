@@ -40,6 +40,27 @@ class ConversationRequest(BaseModel):
     topic: str = Field(default="conversation", min_length=1, max_length=120)
 
 
+class LectureRequest(BaseModel):
+    text: str = Field(min_length=1)
+    topic: str = Field(default="lecture", min_length=1, max_length=120)
+    voice_id: str
+    speed: float = Field(default=1.0, ge=0.5, le=2.0)
+    section_pause: float = Field(default=0.85, ge=0.2, le=3.0)
+
+    @field_validator("text")
+    @classmethod
+    def keep_text(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("Lecture text cannot be empty.")
+        return value
+
+
+class LecturePlan(BaseModel):
+    chunks: list[str]
+    count: int
+    characters: int
+
+
 class PreviewRequest(BaseModel):
     text: str = Field(min_length=1)
     voice_id: str

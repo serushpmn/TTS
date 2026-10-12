@@ -11,9 +11,18 @@ from fastapi.staticfiles import StaticFiles
 from app.audio.concatenate import concatenate_wavs
 from app.audio.mp3 import wav_to_mp3
 from app.config import settings
-from app.models.schemas import ConversationRequest, HistoryItem, PreviewRequest, Project, Voice
+from app.models.schemas import (
+    ConversationRequest,
+    HistoryItem,
+    LecturePlan,
+    LectureRequest,
+    PreviewRequest,
+    Project,
+    Voice,
+)
 from app.services.history import add_history, delete_history, list_history
 from app.services.jobs import jobs
+from app.services.lecture import split_lecture_text
 from app.services.parser import parse_conversation
 from app.services.storage import delete_project, list_projects, save_project
 from app.services.synthesis import synthesize_turn, unique_output_path
@@ -86,6 +95,62 @@ def run_generation(job_id: str, request: ConversationRequest) -> None:
         jobs.update(job_id, status="error", stage="Failed", error=str(error), eta_seconds=None, finished_at=time())
 
 
+def run_lecture(job_id: str, request: LectureRequest) -> None:
+    try:
+        chunks = split_lecture_text(request.text)
+    except ValueError as error:
+        jobs.update(job_id, status="error", stage="Failed", error=str(error), finished_at=time())
+        return
+
+    total = len(chunks)
+    jobs.update(job_id, status="running", stage="Starting lecture…", current=0, total=total)
+    try:
+        segments: list[tuple[Path, float]] = []
+        for index, chunk in enumerate(chunks):
+            jobs.update(
+                job_id,
+                stage=f"Narrating section {index + 1} of {total}",
+                current=index,
+                total=total,
+            )
+            segment = synthesize_turn(engine, chunk, request.voice_id, request.speed)
+            pause = request.section_pause if index < total - 1 else 0
+            segments.append((segment, pause))
+            jobs.update(job_id, current=index + 1, total=total)
+
+        jobs.update(job_id, stage="Combining audio…", current=total, total=total)
+        output = unique_output_path(request.topic, "wav")
+        concatenate_wavs(segments, output)
+        jobs.update(job_id, stage="Encoding MP3…")
+        mp3_output = output.with_suffix(".mp3")
+        wav_to_mp3(output, mp3_output)
+        url = f"/audio/{output.name}"
+        mp3_url = f"/audio/{mp3_output.name}"
+        history = add_history(
+            request.topic.strip(),
+            output.name,
+            url,
+            len(segments),
+            mp3_filename=mp3_output.name,
+            mp3_url=mp3_url,
+        )
+        jobs.update(
+            job_id,
+            status="done",
+            stage="Ready",
+            percent=100,
+            eta_seconds=0,
+            url=url,
+            filename=output.name,
+            mp3_url=mp3_url,
+            mp3_filename=mp3_output.name,
+            history_id=history.id,
+            finished_at=time(),
+        )
+    except Exception as error:  # noqa: BLE001
+        jobs.update(job_id, status="error", stage="Failed", error=str(error), eta_seconds=None, finished_at=time())
+
+
 @app.get("/api/health")
 def health() -> dict[str, str]:
     return {"engine": "Kokoro", "device": settings.kokoro_device}
@@ -117,6 +182,26 @@ def preview(request: PreviewRequest) -> dict[str, str]:
 def generate(request: ConversationRequest) -> dict:
     job = jobs.create(total=len(request.messages))
     Thread(target=run_generation, args=(job.id, request), daemon=True).start()
+    return job.to_dict()
+
+
+@app.post("/api/lecture/plan", response_model=LecturePlan)
+def lecture_plan(payload: dict[str, str]) -> LecturePlan:
+    try:
+        chunks = split_lecture_text(payload.get("text", ""))
+    except ValueError as error:
+        raise fail(error)
+    return LecturePlan(chunks=chunks, count=len(chunks), characters=sum(len(chunk) for chunk in chunks))
+
+
+@app.post("/api/lecture")
+def lecture(request: LectureRequest) -> dict:
+    try:
+        chunks = split_lecture_text(request.text)
+    except ValueError as error:
+        raise fail(error)
+    job = jobs.create(total=len(chunks))
+    Thread(target=run_lecture, args=(job.id, request), daemon=True).start()
     return job.to_dict()
 
 

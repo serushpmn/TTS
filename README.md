@@ -57,23 +57,31 @@ Stop both with `Ctrl+C`.
 
 ## How to use
 
-1. Enter a **topic** (becomes the output filename).
-2. Set **speakers** and voices (must mix female + male).
-3. Type the chat, or import `Speaker: line` text with the import icon.
-4. Optional tags in dialogue: `[pause]`, `[pause:1.5s]`, `[laugh]`, `[sigh]`, …
-5. Click **Generate**.
-6. Download **WAV** and/or **MP3**. Reopen older exports from History.
+### Dialogue mode
+1. Choose **Dialogue** in the top mode switch.
+2. Enter a **topic** (becomes the output filename).
+3. Set **speakers** and voices (must mix female + male).
+4. Type the chat, or import `Speaker: line` text with the import icon.
+5. Optional tags in dialogue: `[pause]`, `[pause:1.5s]`, `[laugh]`, `[sigh]`, …
+6. Click **Generate**, then download **WAV** / **MP3**.
 
-Header icons:
+### Lecture mode
+1. Choose **Lecture**.
+2. Pick one **narrator** voice and optional section pause.
+3. Paste a long script (presentation notes, article, talk).
+4. Blank lines become natural sections; long paragraphs are auto-split.
+5. Click **Generate** — progress shows each section, then WAV + MP3 are ready.
 
-| Icon | Action |
-|------|--------|
-| ☾ / ☀ | Night / day |
-| ◈ | Cycle theme |
-| ? | Expression guide |
-| ↧ | Import conversation |
-| ≡ | History |
-| ↺ | Reset workspace |
+Header actions (labeled):
+
+| Control | Action |
+|---------|--------|
+| Night / Day | Toggle appearance |
+| Guide | Expression tags help |
+| Import | Paste `Speaker: line` dialogue (Dialogue mode) |
+| History | Open / download / delete past exports |
+| Reset | Clear workspace |
+| Generate audio | Start synthesis |
 
 ---
 
@@ -108,12 +116,13 @@ npm run dev
 
 ## Features
 
-- Multi-speaker chat UI (left / right bubbles)
-- Random voices with **required female + male mix**
+- **Dialogue** — multi-speaker chat UI (left / right bubbles)
+- **Lecture** — long-form single-narrator presentations (auto section split)
+- Random voices with **required female + male mix** (Dialogue)
 - Progress bar + ETA while generating
 - WAV **and** MP3 export (no FFmpeg required)
 - Local history (open / download / delete)
-- Day / night + theme packs
+- Day / night appearance (Design.md studio notebook look)
 - Expression tags: pause, laugh, sigh, breath, …
 
 ---

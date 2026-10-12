@@ -20,6 +20,14 @@ export type HistoryItem = {
   messages: number;
   created_at: string;
 };
+export type LecturePlan = { chunks: string[]; count: number; characters: number };
+export type LectureRequest = {
+  text: string;
+  topic: string;
+  voice_id: string;
+  speed: number;
+  section_pause: number;
+};
 export type GenerateJob = {
   id: string;
   status: "queued" | "running" | "done" | "error";
@@ -35,3 +43,4 @@ export type GenerateJob = {
   history_id?: string | null;
   error?: string | null;
 };
+export type AppMode = "dialogue" | "lecture";
