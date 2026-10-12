@@ -1,6 +1,10 @@
 export type Voice = { id: string; name: string; gender: string; accent: string; language: string; engine: string };
 export type Speaker = { id: string; name: string; voice_id: string; speed: number };
-export type Message = { id: string; speaker_id: string; text: string };
+export type Message = {
+  id: string;
+  speaker_id: string;
+  text: string;
+};
 export type Project = {
   id: string;
   name: string;
@@ -20,7 +24,7 @@ export type HistoryItem = {
   messages: number;
   created_at: string;
 };
-export type LecturePlan = { chunks: string[]; count: number; characters: number };
+export type LecturePlan = { chunks: string[]; count: number; characters: number; estimated_seconds?: number };
 export type LectureRequest = {
   text: string;
   topic: string;
@@ -30,7 +34,7 @@ export type LectureRequest = {
 };
 export type GenerateJob = {
   id: string;
-  status: "queued" | "running" | "done" | "error";
+  status: "queued" | "running" | "done" | "error" | "cancelled";
   stage: string;
   current: number;
   total: number;

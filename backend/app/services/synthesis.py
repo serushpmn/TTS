@@ -40,23 +40,30 @@ def write_silence(seconds: float, destination: Path, sample_rate: int = 24000) -
 
 
 def synthesize_turn(engine: KokoroEngine, text: str, voice_id: str, speed: float) -> Path:
-    """Synthesize one turn, expanding [pause]/[laugh]/etc. tags."""
+    """Synthesize one turn, expanding [pause]/[laugh]/[slow]/etc. tags."""
     parts = parse_markup(text)
     if len(parts) == 1 and parts[0].kind == "speech":
         return engine.synthesize(parts[0].value, voice_id, speed)
 
     segments: list[tuple[Path, float]] = []
+    active_speed = max(0.5, min(2.0, speed))
     for index, part in enumerate(parts):
+        if part.kind == "speed":
+            active_speed = max(0.5, min(2.0, speed * part.rate))
+            continue
         if part.kind == "pause":
             silence = settings.temp_dir / f"silence-{part.seconds:.2f}.wav"
             if not silence.exists():
                 write_silence(part.seconds, silence, engine.sample_rate)
             segments.append((silence, 0.0))
             continue
-        spoken = part.value if part.kind == "speech" else part.value
-        audio = engine.synthesize(spoken, voice_id, speed)
+        spoken = part.value
+        audio = engine.synthesize(spoken, voice_id, active_speed)
         trailing = 0.12 if index < len(parts) - 1 else 0.0
         segments.append((audio, trailing))
+
+    if not segments:
+        return engine.synthesize(" ", voice_id, speed)
 
     combined = settings.temp_dir / f"turn-{engine.cache_key(text, voice_id, speed)}.wav"
     if not combined.exists():

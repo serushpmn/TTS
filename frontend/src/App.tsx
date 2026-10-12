@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { api } from "./api";
+import { CHAT_THEMES, loadChatTheme, saveChatTheme, type ChatTheme } from "./bubbles";
+import { clearDraft, formatDuration, loadDraft, saveDraft } from "./draft";
+import { estimateDialogueSeconds } from "./estimate";
 import { applyAppearance, loadMode, type ModeId } from "./themes";
 import type { AppMode, GenerateJob, HistoryItem, LecturePlan, Message, Project, Speaker, Voice } from "./types";
 import {
@@ -12,6 +15,11 @@ import {
 } from "./voices";
 
 const id = () => crypto.randomUUID();
+const SSML_ACTIONS: { label: string; tag: string; title: string }[] = [
+  { label: "مکث", tag: "[pause]", title: "Insert pause" },
+  { label: "خنده", tag: "[laugh]", title: "Insert laugh" },
+  { label: "آهسته", tag: "[slow]", title: "Speak slower from here" },
+];
 
 function createSpeakers(): Speaker[] {
   return [
@@ -25,6 +33,14 @@ function createMessages(speakers: Speaker[]): Message[] {
     { id: id(), speaker_id: speakers[0].id, text: "" },
     { id: id(), speaker_id: speakers[1].id, text: "" },
   ];
+}
+
+function sanitizeMessages(items: Message[]): Message[] {
+  return items.map((item) => ({
+    id: item.id,
+    speaker_id: item.speaker_id,
+    text: item.text,
+  }));
 }
 
 function slugify(value: string) {
@@ -48,7 +64,7 @@ function formatWhen(iso: string) {
   }
 }
 
-function Icon({ name }: { name: "sun" | "moon" | "help" | "import" | "history" | "reset" | "play" | "random" | "close" | "add" }) {
+function Icon({ name }: { name: "sun" | "moon" | "help" | "import" | "history" | "reset" | "play" | "random" | "close" | "add" | "stop" }) {
   const common = { width: 16, height: 16, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.75, strokeLinecap: "round" as const, strokeLinejoin: "round" as const, "aria-hidden": true };
   switch (name) {
     case "sun":
@@ -122,6 +138,12 @@ function Icon({ name }: { name: "sun" | "moon" | "help" | "import" | "history" |
           <path d="M12 5v14M5 12h14" />
         </svg>
       );
+    case "stop":
+      return (
+        <svg {...common}>
+          <rect x="7" y="7" width="10" height="10" rx="1.5" fill="currentColor" stroke="none" />
+        </svg>
+      );
   }
 }
 
@@ -160,11 +182,13 @@ function AutoTextarea({
   onChange,
   placeholder,
   className,
+  onFocus,
 }: {
   value: string;
   onChange: (value: string) => void;
   placeholder?: string;
   className?: string;
+  onFocus?: () => void;
 }) {
   const ref = useRef<HTMLTextAreaElement>(null);
   useEffect(() => {
@@ -180,6 +204,7 @@ function AutoTextarea({
       rows={1}
       value={value}
       placeholder={placeholder}
+      onFocus={onFocus}
       onChange={(e) => onChange(e.target.value)}
     />
   );
@@ -188,12 +213,21 @@ function AutoTextarea({
 type PanelId = "import" | "history" | null;
 
 export default function App() {
-  const bootSpeakers = useMemo(() => createSpeakers(), []);
+  const restored = useMemo(() => loadDraft(), []);
+  const bootSpeakers = useMemo(
+    () => (restored?.speakers?.length ? restored.speakers : createSpeakers()),
+    [restored],
+  );
   const [voices, setVoices] = useState<Voice[]>([]);
   const [speakers, setSpeakers] = useState(bootSpeakers);
-  const [messages, setMessages] = useState(() => createMessages(bootSpeakers));
-  const [pause, setPause] = useState(2.5);
-  const [topic, setTopic] = useState("");
+  const [messages, setMessages] = useState(() =>
+    restored?.messages?.length ? sanitizeMessages(restored.messages) : createMessages(bootSpeakers),
+  );
+  const [chatTheme, setChatTheme] = useState<ChatTheme>(
+    () => restored?.chatTheme || loadChatTheme(),
+  );
+  const [pause, setPause] = useState(restored?.pause ?? 2.5);
+  const [topic, setTopic] = useState(restored?.topic ?? "");
   const [importText, setImportText] = useState("");
   const [audioUrl, setAudioUrl] = useState<string>();
   const [audioName, setAudioName] = useState<string>();
@@ -202,17 +236,20 @@ export default function App() {
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [busy, setBusy] = useState(false);
   const [job, setJob] = useState<GenerateJob | null>(null);
-  const [status, setStatus] = useState("");
+  const [status, setStatus] = useState(() => (restored ? "Draft restored" : ""));
   const [error, setError] = useState("");
   const [showHelp, setShowHelp] = useState(false);
   const [mode, setMode] = useState<ModeId>(() => loadMode());
   const [panel, setPanel] = useState<PanelId>(null);
-  const [appMode, setAppMode] = useState<AppMode>("dialogue");
-  const [lectureText, setLectureText] = useState("");
-  const [narratorVoice, setNarratorVoice] = useState("af_heart");
-  const [narratorSpeed, setNarratorSpeed] = useState(1);
-  const [sectionPause, setSectionPause] = useState(0.85);
+  const [appMode, setAppMode] = useState<AppMode>(restored?.appMode ?? "dialogue");
+  const [lectureText, setLectureText] = useState(restored?.lectureText ?? "");
+  const [narratorVoice, setNarratorVoice] = useState(restored?.narratorVoice ?? "af_heart");
+  const [narratorSpeed, setNarratorSpeed] = useState(restored?.narratorSpeed ?? 1);
+  const [sectionPause, setSectionPause] = useState(restored?.sectionPause ?? 0.85);
   const [lecturePlan, setLecturePlan] = useState<LecturePlan | null>(null);
+  const [speakersExpanded, setSpeakersExpanded] = useState(false);
+  const [activeMessageId, setActiveMessageId] = useState<string | null>(null);
+  const jobIdRef = useRef<string | null>(null);
 
   const speakerById = useMemo(() => new Map(speakers.map((s) => [s.id, s])), [speakers]);
   const speakerSide = useMemo(() => {
@@ -236,18 +273,40 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    saveChatTheme(chatTheme);
+  }, [chatTheme]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      saveDraft({
+        appMode,
+        topic,
+        speakers,
+        messages: sanitizeMessages(messages),
+        pause,
+        lectureText,
+        narratorVoice,
+        narratorSpeed,
+        sectionPause,
+        chatTheme,
+      });
+    }, 450);
+    return () => window.clearTimeout(timer);
+  }, [appMode, topic, speakers, messages, pause, lectureText, narratorVoice, narratorSpeed, sectionPause, chatTheme]);
+
+  useEffect(() => {
     if (appMode !== "lecture" || !lectureText.trim()) {
       setLecturePlan(null);
       return;
     }
     const timer = window.setTimeout(() => {
       api
-        .lecturePlan(lectureText)
+        .lecturePlan(lectureText, narratorSpeed, sectionPause)
         .then(setLecturePlan)
         .catch(() => setLecturePlan(null));
     }, 450);
     return () => window.clearTimeout(timer);
-  }, [lectureText, appMode]);
+  }, [lectureText, appMode, narratorSpeed, sectionPause]);
 
   async function refreshHistory() {
     setHistory(await api.listHistory());
@@ -280,6 +339,7 @@ export default function App() {
   }
 
   function resetAll() {
+    clearDraft();
     const fresh = createSpeakers();
     setSpeakers(fresh);
     setMessages(createMessages(fresh));
@@ -296,20 +356,29 @@ export default function App() {
     setMp3Url(undefined);
     setMp3Name(undefined);
     setJob(null);
+    jobIdRef.current = null;
     setBusy(false);
     setError("");
     setStatus("");
     setPanel(null);
     setShowHelp(false);
+    setSpeakersExpanded(false);
+    setActiveMessageId(null);
   }
 
   async function pollJob(started: GenerateJob) {
+    jobIdRef.current = started.id;
     setJob({ ...started, percent: 1, stage: "Queued…" });
     let latest = started;
     while (latest.status === "queued" || latest.status === "running") {
       await new Promise((resolve) => setTimeout(resolve, 450));
       latest = await api.generateStatus(started.id);
       setJob(latest);
+    }
+    jobIdRef.current = null;
+    if (latest.status === "cancelled") {
+      setStatus("Cancelled");
+      return;
     }
     if (latest.status === "error") throw new Error(latest.error || "Generation failed");
     setAudioUrl(latest.url || undefined);
@@ -318,6 +387,40 @@ export default function App() {
     setMp3Name(latest.mp3_filename || undefined);
     setStatus("Ready");
     await refreshHistory();
+  }
+
+  async function cancelGeneration() {
+    const jobId = jobIdRef.current || job?.id;
+    if (!jobId) return;
+    try {
+      const cancelled = await api.cancelGenerate(jobId);
+      setJob(cancelled);
+      setStatus("Cancelled");
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  function appendTagToText(text: string, tag: string) {
+    if (!text) return tag;
+    const needsSpace = !/\s$/.test(text);
+    return `${text}${needsSpace ? " " : ""}${tag}`;
+  }
+
+  function insertTag(tag: string) {
+    if (appMode === "lecture") {
+      setLectureText((text) => appendTagToText(text, tag));
+      return;
+    }
+    setMessages((items) => {
+      if (!items.length) return items;
+      const targetId = activeMessageId && items.some((item) => item.id === activeMessageId)
+        ? activeMessageId
+        : items[items.length - 1].id;
+      return items.map((item) =>
+        item.id === targetId ? { ...item, text: appendTagToText(item.text, tag) } : item,
+      );
+    });
   }
 
   function removeSpeaker(speakerId: string) {
@@ -495,6 +598,55 @@ export default function App() {
   }
 
   const generating = job?.status === "queued" || job?.status === "running";
+  const chatEmpty = appMode === "dialogue" && messages.every((message) => !message.text.trim());
+  const lectureEmpty = appMode === "lecture" && !lectureText.trim();
+  const filledTurns = messages.filter((message) => message.text.trim()).length;
+  const chatBusy = appMode === "dialogue" && (filledTurns >= 3 || messages.length >= 5);
+  const speakersCompact = chatBusy && !speakersExpanded;
+  const dialogueEstimate =
+    appMode === "dialogue" && filledTurns > 0
+      ? estimateDialogueSeconds(messages, speakers, pause)
+      : null;
+  const generateRef = useRef(generate);
+  const cancelRef = useRef(cancelGeneration);
+  generateRef.current = generate;
+  cancelRef.current = cancelGeneration;
+
+  useEffect(() => {
+    function onKey(event: KeyboardEvent) {
+      const target = event.target as HTMLElement | null;
+      const typing =
+        target &&
+        (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable);
+
+      if (event.key === "Escape") {
+        if (generating) {
+          event.preventDefault();
+          void cancelRef.current();
+          return;
+        }
+        if (panel) {
+          setPanel(null);
+          return;
+        }
+        if (showHelp) setShowHelp(false);
+        return;
+      }
+
+      if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
+        if (busy) return;
+        event.preventDefault();
+        void generateRef.current();
+        return;
+      }
+
+      if (!typing && event.key === "?" && !event.ctrlKey && !event.metaKey) {
+        setShowHelp((value) => !value);
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [busy, generating, panel, showHelp]);
 
   return (
     <main className="app-shell">
@@ -522,9 +674,27 @@ export default function App() {
             </button>
           </div>
 
-          <button className="primary generate-btn" disabled={busy} onClick={generate}>
-            Generate audio
-          </button>
+          <div className="generate-group">
+            {appMode === "dialogue" && dialogueEstimate != null && !generating && (
+              <span className="duration-estimate" title="Estimated audio length">
+                {formatDuration(dialogueEstimate)}
+              </span>
+            )}
+            {appMode === "lecture" && lecturePlan?.estimated_seconds != null && !generating && (
+              <span className="duration-estimate" title="Estimated audio length">
+                {formatDuration(lecturePlan.estimated_seconds)}
+              </span>
+            )}
+            {generating ? (
+              <button className="danger generate-btn" type="button" onClick={() => void cancelGeneration()}>
+                Cancel
+              </button>
+            ) : (
+              <button className="primary generate-btn" disabled={busy} onClick={generate}>
+                Generate audio
+              </button>
+            )}
+          </div>
         </div>
 
         <div className="chrome-tools">
@@ -564,10 +734,15 @@ export default function App() {
       </header>
 
       {appMode === "dialogue" ? (
-      <section className="speaker-bar">
+      <section className={`speaker-bar ${speakersCompact ? "compact" : ""}`}>
         <div className="speaker-bar-head">
           <span>Speakers</span>
           <div className="speaker-bar-actions">
+            {chatBusy && (
+              <button type="button" onClick={() => setSpeakersExpanded((value) => !value)}>
+                {speakersCompact ? "Expand" : "Compact"}
+              </button>
+            )}
             <label className="pause-inline" title="Pause when speaker changes">
               Pause
               <select value={pause} onChange={(e) => setPause(+e.target.value)}>
@@ -578,23 +753,43 @@ export default function App() {
                 ))}
               </select>
             </label>
-            <button type="button" disabled={!voices.length || speakers.length < 2} onClick={randomizeAll}>
-              <Icon name="random" /> Random mix
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                const defaults = nextSpeakerDefaults(speakers, voices);
-                setSpeakers((all) => [
-                  ...all,
-                  { id: id(), name: defaults.name, voice_id: defaults.voice_id, speed: 1 },
-                ]);
-              }}
-            >
-              <Icon name="add" /> Add speaker
-            </button>
+            {!speakersCompact && (
+              <>
+                <button type="button" disabled={!voices.length || speakers.length < 2} onClick={randomizeAll}>
+                  <Icon name="random" /> Random mix
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const defaults = nextSpeakerDefaults(speakers, voices);
+                    setSpeakers((all) => [
+                      ...all,
+                      { id: id(), name: defaults.name, voice_id: defaults.voice_id, speed: 1 },
+                    ]);
+                  }}
+                >
+                  <Icon name="add" /> Add speaker
+                </button>
+              </>
+            )}
           </div>
         </div>
+        {speakersCompact ? (
+          <div className="speaker-compact-row">
+            {speakers.map((speaker) => (
+              <button
+                type="button"
+                className="speaker-chip"
+                key={speaker.id}
+                title={`${speaker.name} · ${speaker.voice_id}`}
+                onClick={() => setSpeakersExpanded(true)}
+              >
+                <strong>{speaker.name}</strong>
+                <span>{speaker.voice_id}</span>
+              </button>
+            ))}
+          </div>
+        ) : (
         <div className="speaker-cards">
           {speakers.map((speaker) => {
             const allowed = allowedGendersFor(speaker.id, speakers, voices);
@@ -657,6 +852,7 @@ export default function App() {
             );
           })}
         </div>
+        )}
       </section>
       ) : (
       <section className="speaker-bar narrator-bar">
@@ -711,6 +907,9 @@ export default function App() {
           {lecturePlan && (
             <span className="plan-meta">
               {lecturePlan.count} sections · {lecturePlan.characters.toLocaleString()} chars
+              {lecturePlan.estimated_seconds != null && (
+                <> · {formatDuration(lecturePlan.estimated_seconds)}</>
+              )}
             </span>
           )}
         </div>
@@ -721,13 +920,13 @@ export default function App() {
         <p className="hint">
           {appMode === "lecture" ? (
             <>
-              Paste a long script. Blank lines become sections. Tags work too: <code>[pause]</code>,{" "}
-              <code>[pause:1.5s]</code>, <code>[laugh]</code>.
+              Paste a long script. Blank lines become sections. Use مکث / خنده / آهسته. Shortcuts: Ctrl+Enter
+              generate, Esc cancel.
             </>
           ) : (
             <>
-              Use <code>[pause]</code>, <code>[pause:1.5s]</code>, <code>[laugh]</code>, <code>[sigh]</code> in text.
-              Voices must stay mixed female + male.
+              Choose a chat theme once for the whole conversation. Use مکث / خنده / آهسته inside a message.
+              Speakers compact when the chat gets busy. Ctrl+Enter generate, Esc cancel.
             </>
           )}
         </p>
@@ -753,42 +952,77 @@ export default function App() {
           <div className="progress-track">
             <div className="progress-fill" style={{ width: `${Math.max(job.percent, 4)}%` }} />
           </div>
+          <button type="button" className="cancel-inline" onClick={() => void cancelGeneration()}>
+            <Icon name="stop" /> Stop generation
+          </button>
         </section>
       )}
 
       <div className="workspace">
         {appMode === "dialogue" ? (
-        <section className="chat-pane">
-          <div className="section-heading">
-            <h2>Chat</h2>
-            <button
-              type="button"
-              onClick={() =>
-                setMessages([
-                  ...messages,
-                  {
-                    id: id(),
-                    speaker_id: speakers[messages.length % speakers.length]?.id || speakers[0]?.id || "",
-                    text: "",
-                  },
-                ])
-              }
-            >
-              + Message
-            </button>
+        <section className={`chat-pane chat-theme-${chatTheme}`}>
+          <div className="section-heading chat-toolbar">
+            <div className="chat-toolbar-left">
+              <h2>Chat</h2>
+              <div className="chat-theme-switch" role="radiogroup" aria-label="Chat theme">
+                {CHAT_THEMES.map((option) => (
+                  <button
+                    key={option.id}
+                    type="button"
+                    role="radio"
+                    aria-checked={chatTheme === option.id}
+                    className={chatTheme === option.id ? "active" : ""}
+                    onClick={() => setChatTheme(option.id)}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="chat-heading-actions">
+              {dialogueEstimate != null && (
+                <span className="plan-meta">{formatDuration(dialogueEstimate)}</span>
+              )}
+              <button
+                type="button"
+                className="quiet-btn"
+                onClick={() => {
+                  const speakerId = speakers[messages.length % speakers.length]?.id || speakers[0]?.id || "";
+                  setMessages([
+                    ...messages,
+                    {
+                      id: id(),
+                      speaker_id: speakerId,
+                      text: "",
+                    },
+                  ]);
+                }}
+              >
+                + Message
+              </button>
+            </div>
           </div>
 
           <div className="chat">
+            {chatEmpty && (
+              <div className="empty-state chat-empty">
+                <strong>Start the conversation</strong>
+                <p>Type in a bubble, or import a script. Ctrl+Enter when ready.</p>
+              </div>
+            )}
             {messages.map((message, index) => {
               const speaker = speakerById.get(message.speaker_id);
               const side = speakerSide.get(message.speaker_id) || "left";
+              const active = activeMessageId === message.id;
               return (
-                <article className={`bubble-row ${side}`} key={message.id}>
-                  <div className={`bubble ${side}`}>
-                    <div className="bubble-meta">
+                <article className={`bubble-row ${side} ${active ? "active" : ""}`} key={message.id}>
+                  <div className="bubble-stack">
+                    <label className="bubble-speaker">
                       <select
                         value={message.speaker_id}
+                        aria-label="Speaker"
                         onChange={(e) => updateMessage(message, { speaker_id: e.target.value })}
+                        onFocus={() => setActiveMessageId(message.id)}
                       >
                         {speakers.map((s) => (
                           <option key={s.id} value={s.id}>
@@ -796,12 +1030,28 @@ export default function App() {
                           </option>
                         ))}
                       </select>
-                      <span>{speaker?.voice_id}</span>
-                      <div className="bubble-tools">
-                        <button type="button" title="Up" onClick={() => move(index, -1)}>
+                    </label>
+                    <div className={`bubble ${side}`}>
+                      <AutoTextarea
+                        className="bubble-input"
+                        value={message.text}
+                        placeholder="Message"
+                        onFocus={() => setActiveMessageId(message.id)}
+                        onChange={(value) => updateMessage(message, { text: value })}
+                      />
+                      <div className="bubble-actions">
+                        <button
+                          type="button"
+                          title="Preview"
+                          disabled={!message.text.trim() || !speaker || busy}
+                          onClick={() => speaker && preview(message.text, speaker)}
+                        >
+                          ▶
+                        </button>
+                        <button type="button" title="Move up" onClick={() => move(index, -1)}>
                           ↑
                         </button>
-                        <button type="button" title="Down" onClick={() => move(index, 1)}>
+                        <button type="button" title="Move down" onClick={() => move(index, 1)}>
                           ↓
                         </button>
                         <button
@@ -827,24 +1077,25 @@ export default function App() {
                         </button>
                       </div>
                     </div>
-                    <AutoTextarea
-                      className="bubble-input"
-                      value={message.text}
-                      placeholder="Write dialogue…"
-                      onChange={(value) => updateMessage(message, { text: value })}
-                    />
-                    <button
-                      type="button"
-                      className="preview-btn"
-                      disabled={!message.text.trim() || !speaker || busy}
-                      onClick={() => speaker && preview(message.text, speaker)}
-                    >
-                      ▶
-                    </button>
                   </div>
                 </article>
               );
             })}
+          </div>
+
+          <div className="chat-compose-bar" aria-label="Insert expression tags">
+            {SSML_ACTIONS.map((action) => (
+              <button
+                key={action.tag}
+                type="button"
+                className="compose-chip"
+                title={action.title}
+                onClick={() => insertTag(action.tag)}
+                disabled={busy}
+              >
+                {action.label}
+              </button>
+            ))}
           </div>
         </section>
         ) : (
@@ -853,10 +1104,16 @@ export default function App() {
             <h2>Lecture script</h2>
             <span className="plan-meta">
               {lecturePlan
-                ? `${lecturePlan.count} sections · ~${Math.max(1, Math.round(lecturePlan.characters / 14))}s spoken est.`
+                ? `${lecturePlan.count} sections · ${formatDuration(lecturePlan.estimated_seconds ?? Math.max(1, Math.round(lecturePlan.characters / 13.5)))}`
                 : "Paste a long text"}
             </span>
           </div>
+          {lectureEmpty && (
+            <div className="empty-state">
+              <strong>Paste your lecture</strong>
+              <p>Blank lines become sections. Estimated duration updates as you type. Ctrl+Enter to generate.</p>
+            </div>
+          )}
           <textarea
             className="lecture-editor"
             value={lectureText}
@@ -884,6 +1141,20 @@ export default function App() {
               {lecturePlan.count > 8 && <p className="muted">+{lecturePlan.count - 8} more sections</p>}
             </div>
           )}
+          <div className="chat-compose-bar" aria-label="Insert expression tags">
+            {SSML_ACTIONS.map((action) => (
+              <button
+                key={action.tag}
+                type="button"
+                className="compose-chip"
+                title={action.title}
+                onClick={() => insertTag(action.tag)}
+                disabled={busy}
+              >
+                {action.label}
+              </button>
+            ))}
+          </div>
         </section>
         )}
 
@@ -910,6 +1181,7 @@ export default function App() {
             <section className="panel empty-side">
               <div className="audio-sphere" aria-hidden="true" />
               <p>Generate to get WAV + MP3 here.</p>
+              <p className="muted shortcut-hint">Ctrl+Enter · Esc to cancel</p>
             </section>
           )}
           {status && !generating && <div className="notice tight">{status}</div>}

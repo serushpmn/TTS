@@ -22,6 +22,7 @@ class Job:
     mp3_filename: str | None = None
     history_id: str | None = None
     error: str | None = None
+    cancel_requested: bool = False
     started_at: float = field(default_factory=time)
     finished_at: float | None = None
 
@@ -49,7 +50,6 @@ class JobStore:
         self._lock = Lock()
 
     def create(self, total: int) -> Job:
-        # Rough CPU cold-start estimate; refined once real turn timings arrive.
         estimate = max(total, 1) * 4.5
         job = Job(
             id=uuid4().hex,
@@ -65,14 +65,36 @@ class JobStore:
         with self._lock:
             return self._jobs.get(job_id)
 
+    def cancel(self, job_id: str) -> Job | None:
+        with self._lock:
+            job = self._jobs.get(job_id)
+            if not job:
+                return None
+            if job.status in ("done", "error", "cancelled"):
+                return job
+            job.cancel_requested = True
+            job.status = "cancelled"
+            job.stage = "Cancelled"
+            job.eta_seconds = None
+            job.finished_at = time()
+            return job
+
+    def is_cancelled(self, job_id: str) -> bool:
+        with self._lock:
+            job = self._jobs.get(job_id)
+            return bool(job and (job.cancel_requested or job.status == "cancelled"))
+
     def update(self, job_id: str, **fields: Any) -> Job | None:
         with self._lock:
             job = self._jobs.get(job_id)
             if not job:
                 return None
+            # Once cancelled, never resurrect with progress / done / error updates.
+            if job.cancel_requested or job.status == "cancelled":
+                return job
             for key, value in fields.items():
                 setattr(job, key, value)
-            if job.total > 0 and job.current >= 0:
+            if job.total > 0 and job.current >= 0 and job.status != "cancelled":
                 job.percent = min(100.0, (job.current / job.total) * 100)
             if job.status == "running" and job.current > 0:
                 elapsed = time() - job.started_at

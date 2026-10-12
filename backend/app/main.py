@@ -48,6 +48,8 @@ def run_generation(job_id: str, request: ConversationRequest) -> None:
         segments: list[tuple[Path, float]] = []
         total = len(request.messages)
         for index, message in enumerate(request.messages):
+            if jobs.is_cancelled(job_id):
+                return
             speaker = speaker_map.get(message.speaker_id)
             if not speaker:
                 raise ValueError(f"Message {index + 1} references an unknown speaker.")
@@ -57,14 +59,20 @@ def run_generation(job_id: str, request: ConversationRequest) -> None:
                 current=index,
             )
             segment = synthesize_turn(engine, message.text, speaker.voice_id, speaker.speed)
+            if jobs.is_cancelled(job_id):
+                return
             changing = index < total - 1 and request.messages[index + 1].speaker_id != message.speaker_id
             pause = request.speaker_change_pause if changing else (0.35 if index < total - 1 else 0)
             segments.append((segment, pause))
             jobs.update(job_id, current=index + 1)
 
+        if jobs.is_cancelled(job_id):
+            return
         jobs.update(job_id, stage="Combining audio…", current=total)
         output = unique_output_path(request.topic, "wav")
         concatenate_wavs(segments, output)
+        if jobs.is_cancelled(job_id):
+            return
         jobs.update(job_id, stage="Encoding MP3…")
         mp3_output = output.with_suffix(".mp3")
         wav_to_mp3(output, mp3_output)
@@ -78,6 +86,8 @@ def run_generation(job_id: str, request: ConversationRequest) -> None:
             mp3_filename=mp3_output.name,
             mp3_url=mp3_url,
         )
+        if jobs.is_cancelled(job_id):
+            return
         jobs.update(
             job_id,
             status="done",
@@ -92,6 +102,8 @@ def run_generation(job_id: str, request: ConversationRequest) -> None:
             finished_at=time(),
         )
     except Exception as error:  # noqa: BLE001 - surface any synthesis failure to the job UI
+        if jobs.is_cancelled(job_id):
+            return
         jobs.update(job_id, status="error", stage="Failed", error=str(error), eta_seconds=None, finished_at=time())
 
 
@@ -107,6 +119,8 @@ def run_lecture(job_id: str, request: LectureRequest) -> None:
     try:
         segments: list[tuple[Path, float]] = []
         for index, chunk in enumerate(chunks):
+            if jobs.is_cancelled(job_id):
+                return
             jobs.update(
                 job_id,
                 stage=f"Narrating section {index + 1} of {total}",
@@ -114,13 +128,19 @@ def run_lecture(job_id: str, request: LectureRequest) -> None:
                 total=total,
             )
             segment = synthesize_turn(engine, chunk, request.voice_id, request.speed)
+            if jobs.is_cancelled(job_id):
+                return
             pause = request.section_pause if index < total - 1 else 0
             segments.append((segment, pause))
             jobs.update(job_id, current=index + 1, total=total)
 
+        if jobs.is_cancelled(job_id):
+            return
         jobs.update(job_id, stage="Combining audio…", current=total, total=total)
         output = unique_output_path(request.topic, "wav")
         concatenate_wavs(segments, output)
+        if jobs.is_cancelled(job_id):
+            return
         jobs.update(job_id, stage="Encoding MP3…")
         mp3_output = output.with_suffix(".mp3")
         wav_to_mp3(output, mp3_output)
@@ -134,6 +154,8 @@ def run_lecture(job_id: str, request: LectureRequest) -> None:
             mp3_filename=mp3_output.name,
             mp3_url=mp3_url,
         )
+        if jobs.is_cancelled(job_id):
+            return
         jobs.update(
             job_id,
             status="done",
@@ -148,6 +170,8 @@ def run_lecture(job_id: str, request: LectureRequest) -> None:
             finished_at=time(),
         )
     except Exception as error:  # noqa: BLE001
+        if jobs.is_cancelled(job_id):
+            return
         jobs.update(job_id, status="error", stage="Failed", error=str(error), eta_seconds=None, finished_at=time())
 
 
@@ -186,12 +210,29 @@ def generate(request: ConversationRequest) -> dict:
 
 
 @app.post("/api/lecture/plan", response_model=LecturePlan)
-def lecture_plan(payload: dict[str, str]) -> LecturePlan:
+def lecture_plan(payload: dict) -> LecturePlan:
     try:
-        chunks = split_lecture_text(payload.get("text", ""))
+        chunks = split_lecture_text(str(payload.get("text", "")))
     except ValueError as error:
         raise fail(error)
-    return LecturePlan(chunks=chunks, count=len(chunks), characters=sum(len(chunk) for chunk in chunks))
+    characters = sum(len(chunk) for chunk in chunks)
+    try:
+        speed = max(float(payload.get("speed", 1.0) or 1.0), 0.5)
+    except (TypeError, ValueError):
+        speed = 1.0
+    try:
+        section_pause = max(float(payload.get("section_pause", 0.85) or 0.85), 0.0)
+    except (TypeError, ValueError):
+        section_pause = 0.85
+    # ~13.5 English characters per spoken second at speed 1.0, plus section gaps.
+    speech_seconds = characters / (13.5 * speed)
+    pause_seconds = max(len(chunks) - 1, 0) * section_pause
+    return LecturePlan(
+        chunks=chunks,
+        count=len(chunks),
+        characters=characters,
+        estimated_seconds=max(1, int(round(speech_seconds + pause_seconds))),
+    )
 
 
 @app.post("/api/lecture")
@@ -208,6 +249,14 @@ def lecture(request: LectureRequest) -> dict:
 @app.get("/api/generate/{job_id}")
 def generate_status(job_id: str) -> dict:
     job = jobs.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found.")
+    return job.to_dict()
+
+
+@app.post("/api/generate/{job_id}/cancel")
+def cancel_generation(job_id: str) -> dict:
+    job = jobs.cancel(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found.")
     return job.to_dict()

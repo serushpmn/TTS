@@ -16,3 +16,10 @@ def test_default_pause_duration():
     parts = parse_markup("Wait [pause] now")
     assert parts[1].kind == "pause"
     assert parts[1].seconds == 0.8
+
+
+def test_parse_markup_slow():
+    parts = parse_markup("Hello [slow] carefully now")
+    assert parts[0].kind == "speech" and parts[0].value == "Hello"
+    assert parts[1].kind == "speed" and parts[1].rate == 0.75
+    assert parts[2].kind == "speech" and parts[2].value == "carefully now"

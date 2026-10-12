@@ -59,6 +59,7 @@ class LecturePlan(BaseModel):
     chunks: list[str]
     count: int
     characters: int
+    estimated_seconds: int = 0
 
 
 class PreviewRequest(BaseModel):

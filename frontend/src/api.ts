@@ -55,10 +55,10 @@ export const api = {
         topic: project.topic || project.name,
       }),
     }),
-  lecturePlan: (text: string) =>
+  lecturePlan: (text: string, speed = 1, section_pause = 0.85) =>
     request<LecturePlan>("/api/lecture/plan", {
       method: "POST",
-      body: JSON.stringify({ text }),
+      body: JSON.stringify({ text, speed, section_pause }),
     }),
   startLecture: (payload: LectureRequest) =>
     request<GenerateJob>("/api/lecture", {
@@ -66,6 +66,8 @@ export const api = {
       body: JSON.stringify(payload),
     }),
   generateStatus: (jobId: string) => request<GenerateJob>(`/api/generate/${jobId}`),
+  cancelGenerate: (jobId: string) =>
+    request<GenerateJob>(`/api/generate/${jobId}/cancel`, { method: "POST" }),
   listHistory: () => request<HistoryItem[]>("/api/history"),
   deleteHistory: (id: string) => request<HistoryItem>(`/api/history/${id}`, { method: "DELETE" }),
   listProjects: () => request<Project[]>("/api/projects"),

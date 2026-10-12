@@ -5,7 +5,7 @@ import re
 
 
 TAG_RE = re.compile(
-    r"\[(pause(?:\s*[:=]\s*[\d.]+s?)?|laugh(?:ter)?|hahaha|sigh|breath|gasp|cough)\]",
+    r"\[(pause(?:\s*[:=]\s*[\d.]+s?)?|laugh(?:ter)?|hahaha|sigh|breath|gasp|cough|slow|fast)\]",
     re.IGNORECASE,
 )
 
@@ -19,12 +19,18 @@ EFFECT_VOCALS = {
     "cough": "cough",
 }
 
+SPEED_MARKERS = {
+    "slow": 0.75,
+    "fast": 1.25,
+}
+
 
 @dataclass(frozen=True)
 class TextPart:
-    kind: str  # "speech" | "pause" | "effect"
+    kind: str  # "speech" | "pause" | "effect" | "speed"
     value: str = ""
     seconds: float = 0.0
+    rate: float = 1.0
 
 
 def _pause_seconds(token: str) -> float:
@@ -35,7 +41,7 @@ def _pause_seconds(token: str) -> float:
 
 
 def parse_markup(text: str) -> list[TextPart]:
-    """Split dialogue into speech, pause, and effect parts."""
+    """Split dialogue into speech, pause, effect, and speed parts."""
     parts: list[TextPart] = []
     cursor = 0
     for match in TAG_RE.finditer(text):
@@ -45,6 +51,8 @@ def parse_markup(text: str) -> list[TextPart]:
         raw = match.group(1).lower()
         if raw.startswith("pause"):
             parts.append(TextPart("pause", seconds=_pause_seconds(raw)))
+        elif raw in SPEED_MARKERS:
+            parts.append(TextPart("speed", rate=SPEED_MARKERS[raw]))
         else:
             key = re.sub(r"[^a-z]", "", raw)
             vocal = EFFECT_VOCALS.get(key, "ha ha")
