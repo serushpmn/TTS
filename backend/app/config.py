@@ -48,6 +48,7 @@ class Settings:
             (self.data_dir / "models").mkdir(parents=True, exist_ok=True)
             (self.data_dir / "voices").mkdir(parents=True, exist_ok=True)
             (self.data_dir / "benchmarks").mkdir(parents=True, exist_ok=True)
+            (self.data_dir / "voice_samples").mkdir(parents=True, exist_ok=True)
 
     @property
     def kokoro_torch_device(self) -> str | None:

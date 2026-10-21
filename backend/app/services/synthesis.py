@@ -8,9 +8,11 @@ import wave
 import numpy as np
 
 from app.audio.concatenate import concatenate_wavs
+from app.audio.trim import trim_wav_silence
 from app.config import settings
 from app.services.markup import parse_markup
 from app.services.prefs import selected_model_id
+from app.services.pronunciation import apply_pronunciation
 from app.tts.factory import engine_hub
 
 
@@ -47,12 +49,22 @@ def synthesize_turn(
     speed: float,
     engine=None,
     model_id: str | None = None,
+    *,
+    trim_silence: bool = False,
+    apply_dict: bool = True,
 ) -> Path:
     """Synthesize one turn, expanding [pause]/[laugh]/[slow]/etc. tags."""
     active_engine = engine or engine_hub.get(model_id or selected_model_id())
-    parts = parse_markup(text)
+    prepared = apply_pronunciation(text) if apply_dict else text
+    parts = parse_markup(prepared)
     if len(parts) == 1 and parts[0].kind == "speech":
-        return active_engine.synthesize(parts[0].value, voice_id, speed)
+        path = active_engine.synthesize(parts[0].value, voice_id, speed)
+        if trim_silence:
+            trimmed = settings.temp_dir / f"trim-{path.stem}.wav"
+            if not trimmed.exists():
+                trim_wav_silence(path, trimmed)
+            return trimmed
+        return path
 
     segments: list[tuple[Path, float]] = []
     active_speed = max(0.5, min(2.0, speed))
@@ -75,9 +87,9 @@ def synthesize_turn(
         return active_engine.synthesize(" ", voice_id, speed)
 
     model_key = getattr(active_engine, "model_id", model_id or "unknown")
-    digest_source = f"{model_key}|{text}|{voice_id}|{speed}"
+    digest_source = f"{model_key}|{prepared}|{voice_id}|{speed}|trim={trim_silence}"
     digest = hashlib.sha256(digest_source.encode()).hexdigest()
     combined = settings.temp_dir / f"turn-{digest}.wav"
     if not combined.exists():
-        concatenate_wavs(segments, combined)
+        concatenate_wavs(segments, combined, trim_silence=trim_silence)
     return combined

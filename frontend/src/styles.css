@@ -1100,6 +1100,72 @@ html[data-mode="night"] .offline-banner.ok { background: #1e3320; }
   background: var(--btn);
 }
 
+.pause-presets { display: inline-flex; gap: 4px; }
+.pause-presets button,
+.voice-card-actions button.active {
+  border-color: var(--ink);
+  background: var(--panel);
+}
+.check-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.voice-open-btn {
+  width: 100%;
+  text-align: left;
+  font-size: 13px;
+}
+.voice-picker { display: flex; flex-direction: column; gap: 12px; }
+.voice-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: end;
+}
+.voice-filters label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
+.voice-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px;
+}
+.voice-card {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 8px;
+  background: var(--panel-elevated);
+}
+.voice-card.selected { border-color: var(--ink); }
+.voice-select {
+  display: flex;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  padding: 4px;
+  color: inherit;
+}
+.voice-select code { display: block; font-size: 11px; color: var(--caption); }
+.voice-card-actions { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; }
+.voice-compare {
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.voice-compare-row { display: flex; flex-wrap: wrap; gap: 12px; }
+.voice-compare-item { display: flex; align-items: center; gap: 8px; }
+.pronunciation-form {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 8px;
+}
+.pronunciation-list { display: flex; flex-direction: column; gap: 8px; }
+
 @media (max-width: 900px) {
   .app-shell { height: auto; min-height: 100%; overflow: visible; padding: 12px 14px; }
   .workspace { grid-template-columns: 1fr; }
@@ -1118,4 +1184,5 @@ html[data-mode="night"] .offline-banner.ok { background: #1e3320; }
   .chrome-top .generate-btn { width: 100%; }
   .tool-row { width: 100%; }
   .action-btn span { display: inline; }
+  .pronunciation-form { grid-template-columns: 1fr; }
 }

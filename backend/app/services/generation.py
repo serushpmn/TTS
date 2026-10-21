@@ -68,7 +68,14 @@ def run_generation(job_id: str, request: ConversationRequest) -> None:
                 stage=f"Synthesizing turn {index + 1} of {total} ({speaker.name})",
                 current=index,
             )
-            segment = synthesize_turn(message.text, speaker.voice_id, speaker.speed, engine=engine, model_id=model_id)
+            segment = synthesize_turn(
+                message.text,
+                speaker.voice_id,
+                speaker.speed,
+                engine=engine,
+                model_id=model_id,
+                trim_silence=request.trim_silence,
+            )
             if jobs.is_cancelled(job_id):
                 _cleanup_outputs(output_paths)
                 return
@@ -82,7 +89,7 @@ def run_generation(job_id: str, request: ConversationRequest) -> None:
             return
         jobs.update(job_id, status="combining", stage="Combining audio…", current=total)
         output = unique_output_path(request.topic, "wav")
-        concatenate_wavs(segments, output)
+        concatenate_wavs(segments, output, trim_silence=False)
         output_paths.append(str(output))
         jobs.track_output(job_id, str(output))
         if jobs.is_cancelled(job_id):
@@ -183,7 +190,14 @@ def run_lecture(job_id: str, request: LectureRequest) -> None:
                 current=index,
                 total=total,
             )
-            segment = synthesize_turn(chunk, request.voice_id, request.speed, engine=engine, model_id=model_id)
+            segment = synthesize_turn(
+                chunk,
+                request.voice_id,
+                request.speed,
+                engine=engine,
+                model_id=model_id,
+                trim_silence=request.trim_silence,
+            )
             if jobs.is_cancelled(job_id):
                 _cleanup_outputs(output_paths)
                 return
@@ -196,7 +210,7 @@ def run_lecture(job_id: str, request: LectureRequest) -> None:
             return
         jobs.update(job_id, status="combining", stage="Combining audio…", current=total, total=total)
         output = unique_output_path(request.topic, "wav")
-        concatenate_wavs(segments, output)
+        concatenate_wavs(segments, output, trim_silence=False)
         output_paths.append(str(output))
         if jobs.is_cancelled(job_id):
             _cleanup_outputs(output_paths)

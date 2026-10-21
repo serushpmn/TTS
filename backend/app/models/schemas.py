@@ -10,6 +10,8 @@ class Voice(BaseModel):
     accent: str
     language: str = "English"
     engine: str = "Kokoro"
+    sample_url: str | None = None
+    avatar: str = "female"  # "female" | "male"
 
 
 class Speaker(BaseModel):
@@ -38,6 +40,7 @@ class ConversationRequest(BaseModel):
     speakers: list[Speaker] = Field(min_length=1, max_length=12)
     speaker_change_pause: float = Field(default=2.5, ge=0.0, le=4.0)
     same_speaker_pause: float = Field(default=0.35, ge=0.0, le=2.0)
+    trim_silence: bool = False
     topic: str = Field(default="conversation", min_length=1, max_length=120)
     model_id: str | None = None
 
@@ -48,6 +51,7 @@ class LectureRequest(BaseModel):
     voice_id: str
     speed: float = Field(default=1.0, ge=0.5, le=2.0)
     section_pause: float = Field(default=0.85, ge=0.0, le=3.0)
+    trim_silence: bool = False
     model_id: str | None = None
 
     @field_validator("text")
@@ -84,6 +88,7 @@ class SegmentRegenRequest(BaseModel):
     speakers: list[Speaker] | None = None
     speaker_change_pause: float = Field(default=2.5, ge=0.0, le=4.0)
     same_speaker_pause: float = Field(default=0.35, ge=0.0, le=2.0)
+    trim_silence: bool = False
     lecture_chunks: list[str] | None = None
     section_pause: float = Field(default=0.85, ge=0.0, le=3.0)
     topic: str = Field(default="conversation", min_length=1, max_length=120)
@@ -98,6 +103,7 @@ class Project(BaseModel):
     speakers: list[Speaker] = Field(default_factory=list)
     speaker_change_pause: float = Field(default=2.5, ge=0.0, le=4.0)
     same_speaker_pause: float = Field(default=0.35, ge=0.0, le=2.0)
+    trim_silence: bool = False
     lecture_text: str = ""
     narrator_voice: str = "af_heart"
     narrator_speed: float = Field(default=1.0, ge=0.5, le=2.0)
@@ -123,6 +129,18 @@ class HistoryItem(BaseModel):
 class PrefsUpdate(BaseModel):
     selected_model_id: str | None = None
     playback_rate: float | None = Field(default=None, ge=0.5, le=2.0)
+    favorite_voices: list[str] | None = None
+    default_voice_id: str | None = None
+    trim_silence_default: bool | None = None
+
+
+class PronunciationEntry(BaseModel):
+    word: str = Field(min_length=1, max_length=80)
+    pronunciation: str = Field(min_length=1, max_length=200)
+
+
+class PronunciationDict(BaseModel):
+    entries: dict[str, str] = Field(default_factory=dict)
 
 
 class BenchmarkRequest(BaseModel):

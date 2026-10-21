@@ -1,4 +1,5 @@
 import type {
+  AppPrefs,
   BenchmarkResult,
   DownloadJob,
   GenerateJob,
@@ -64,6 +65,7 @@ export const api = {
         speakers: project.speakers,
         speaker_change_pause: project.speaker_change_pause,
         same_speaker_pause: project.same_speaker_pause ?? 0.35,
+        trim_silence: project.trim_silence ?? false,
         topic: project.topic || project.name,
         model_id: project.model_id,
       }),
@@ -122,9 +124,9 @@ export const api = {
   unloadModel: () => request<{ status: string }>("/api/models/unload", { method: "POST" }),
   deleteModel: (modelId: string) => request<ModelInfo>(`/api/models/${modelId}`, { method: "DELETE" }),
   offlineStatus: () => request<OfflineStatus>("/api/status/offline"),
-  getPrefs: () => request<{ selected_model_id: string; playback_rate: number }>("/api/prefs"),
-  savePrefs: (patch: { selected_model_id?: string; playback_rate?: number }) =>
-    request<{ selected_model_id: string; playback_rate: number }>("/api/prefs", {
+  getPrefs: () => request<AppPrefs>("/api/prefs"),
+  savePrefs: (patch: Partial<AppPrefs>) =>
+    request<AppPrefs>("/api/prefs", {
       method: "PUT",
       body: JSON.stringify(patch),
     }),
@@ -140,4 +142,29 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
+  getPronunciation: () => request<Record<string, string>>("/api/pronunciation"),
+  savePronunciation: (entries: Record<string, string>) =>
+    request<Record<string, string>>("/api/pronunciation", {
+      method: "PUT",
+      body: JSON.stringify({ entries }),
+    }),
+  upsertPronunciation: (word: string, pronunciation: string) =>
+    request<Record<string, string>>("/api/pronunciation", {
+      method: "POST",
+      body: JSON.stringify({ word, pronunciation }),
+    }),
+  deletePronunciation: (word: string) =>
+    request<Record<string, string>>(`/api/pronunciation/${encodeURIComponent(word)}`, {
+      method: "DELETE",
+    }),
+  buildVoiceSample: (voiceId: string, force = false) =>
+    request<{ voice_id: string; url: string; ready: boolean }>(
+      `/api/voices/${encodeURIComponent(voiceId)}/sample?force=${force ? "true" : "false"}`,
+      { method: "POST" },
+    ),
+  ensureAllVoiceSamples: (force = false) =>
+    request<{ count: number; results: Array<{ voice_id: string; ready: boolean; url?: string; error?: string }> }>(
+      `/api/voices/samples/ensure-all?force=${force ? "true" : "false"}`,
+      { method: "POST" },
+    ),
 };

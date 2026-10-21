@@ -1,4 +1,13 @@
-export type Voice = { id: string; name: string; gender: string; accent: string; language: string; engine: string };
+export type Voice = {
+  id: string;
+  name: string;
+  gender: string;
+  accent: string;
+  language: string;
+  engine: string;
+  sample_url?: string | null;
+  avatar?: string;
+};
 export type Speaker = { id: string; name: string; voice_id: string; speed: number };
 export type Message = {
   id: string;
@@ -14,6 +23,7 @@ export type Project = {
   messages: Message[];
   speaker_change_pause: number;
   same_speaker_pause?: number;
+  trim_silence?: boolean;
   lecture_text?: string;
   narrator_voice?: string;
   narrator_speed?: number;
@@ -41,6 +51,7 @@ export type LectureRequest = {
   voice_id: string;
   speed: number;
   section_pause: number;
+  trim_silence?: boolean;
   model_id?: string | null;
 };
 export type GenerateJob = {
@@ -120,5 +131,12 @@ export type BenchmarkResult = {
     sample_url?: string | null;
   }>;
   notes: string[];
+};
+export type AppPrefs = {
+  selected_model_id: string;
+  playback_rate: number;
+  favorite_voices: string[];
+  default_voice_id: string;
+  trim_silence_default: boolean;
 };
 export type AppMode = "dialogue" | "lecture";

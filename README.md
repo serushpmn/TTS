@@ -161,7 +161,21 @@ TTS/
 
 ### Planned features (staged)
 
-See [`docs/FEATURE_ROADMAP.md`](docs/FEATURE_ROADMAP.md) for the backlog (pronunciation dictionary, emotion/tone chips, synth language, UI i18n fa/en/de, pause presets + silence trim, pre-baked voice samples, avatars, filters, compare, favorites, default voice).
+See [`docs/FEATURE_ROADMAP.md`](docs/FEATURE_ROADMAP.md).
+
+**Shipped in stages 1–4:** pause presets (short/normal/long) + per-project change/same/section pauses; optional trim leading/trailing silence; Voices panel with pre-baked samples, gender/accent/language filters, SVG avatars, compare (2–3), favorites, default voice; pronunciation dictionary (Dict panel).
+
+**Still planned:** emotion/tone chips, synth language (e.g. German), UI i18n (fa/en/de).
+
+Bake all voice samples once (uses the selected model):
+
+```bash
+cd backend
+$env:PYTHONPATH=(Get-Location)
+.\.venv\Scripts\python.exe scripts\bake_voice_samples.py
+```
+
+Or use **Voices → Bake missing samples** in the UI.
 
 ---
 

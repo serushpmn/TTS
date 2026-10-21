@@ -5,8 +5,11 @@ import { AudioPlayer } from "./components/AudioPlayer";
 import { Icon } from "./components/Icons";
 import { ModelPanel } from "./components/ModelPanel";
 import { ProjectsPanel } from "./components/ProjectsPanel";
+import { PronunciationPanel } from "./components/PronunciationPanel";
+import { VoicePicker } from "./components/VoicePicker";
 import { clearDraft, formatDuration, loadDraft, saveDraft } from "./draft";
 import { estimateDialogueSeconds } from "./estimate";
+import { matchPausePreset, PAUSE_PRESETS, type PausePresetId } from "./pausePresets";
 import { applyAppearance, loadMode, type ModeId } from "./themes";
 import type { AppMode, GenerateJob, HistoryItem, LecturePlan, Message, Project, Speaker, Voice } from "./types";
 import {
@@ -20,8 +23,10 @@ import {
 
 const id = () => crypto.randomUUID();
 const SSML_ACTIONS: { label: string; tag: string; title: string }[] = [
-  { label: "مکث", tag: "[pause]", title: "Insert pause" },
-  { label: "خنده", tag: "[laugh]", title: "Insert laugh" },
+  { label: "مکث کوتاه", tag: "[pause:0.4s]", title: "Short pause" },
+  { label: "مکث", tag: "[pause]", title: "Normal pause" },
+  { label: "مکث بلند", tag: "[pause:1.5s]", title: "Long pause" },
+  { label: "خنده", tag: "[laugh]", title: "Insert laugh (spoken approximation)" },
   { label: "آهسته", tag: "[slow]", title: "Speak slower from here" },
 ];
 
@@ -131,7 +136,7 @@ function AutoTextarea({
   );
 }
 
-type PanelId = "import" | "history" | "models" | "projects" | null;
+type PanelId = "import" | "history" | "models" | "projects" | "voices" | "pronounce" | null;
 
 export default function App() {
   const restored = useMemo(() => loadDraft(), []);
@@ -148,6 +153,8 @@ export default function App() {
     () => restored?.chatTheme || loadChatTheme(),
   );
   const [pause, setPause] = useState(restored?.pause ?? 2.5);
+  const [sameSpeakerPause, setSameSpeakerPause] = useState(0.35);
+  const [trimSilence, setTrimSilence] = useState(false);
   const [topic, setTopic] = useState(restored?.topic ?? "");
   const [importText, setImportText] = useState("");
   const [audioUrl, setAudioUrl] = useState<string>();
@@ -172,7 +179,11 @@ export default function App() {
   const [activeMessageId, setActiveMessageId] = useState<string | null>(null);
   const [selectedModelId, setSelectedModelId] = useState(restored?.selectedModelId ?? "kokoro-torch");
   const [playbackRate, setPlaybackRate] = useState(1);
+  const [favoriteVoices, setFavoriteVoices] = useState<string[]>([]);
+  const [defaultVoiceId, setDefaultVoiceId] = useState("af_heart");
+  const [voiceTarget, setVoiceTarget] = useState<"narrator" | string>("narrator");
   const jobIdRef = useRef<string | null>(null);
+  const pausePreset = matchPausePreset(pause, sameSpeakerPause);
 
   const speakerById = useMemo(() => new Map(speakers.map((s) => [s.id, s])), [speakers]);
   const speakerSide = useMemo(() => {
@@ -185,19 +196,30 @@ export default function App() {
     applyAppearance("studio", mode);
   }, [mode]);
 
-  useEffect(() => {
-    api.voices().then((list) => {
+  function refreshVoices() {
+    return api.voices().then((list) => {
       setVoices(list);
       if (list.length && !list.some((voice) => voice.id === narratorVoice)) {
         setNarratorVoice(list[0].id);
       }
-    }).catch((e) => setError(e.message));
+      return list;
+    });
+  }
+
+  useEffect(() => {
+    refreshVoices().catch((e) => setError(e.message));
     refreshHistory().catch((e) => setError(e.message));
     api
       .getPrefs()
       .then((prefs) => {
         setSelectedModelId(prefs.selected_model_id);
         setPlaybackRate(prefs.playback_rate || 1);
+        setFavoriteVoices(prefs.favorite_voices || []);
+        setDefaultVoiceId(prefs.default_voice_id || "af_heart");
+        setTrimSilence(Boolean(prefs.trim_silence_default));
+        if (!restored?.narratorVoice && prefs.default_voice_id) {
+          setNarratorVoice(prefs.default_voice_id);
+        }
       })
       .catch(() => undefined);
   }, []);
@@ -263,7 +285,8 @@ export default function App() {
     speakers,
     messages,
     speaker_change_pause: pause,
-    same_speaker_pause: 0.35,
+    same_speaker_pause: sameSpeakerPause,
+    trim_silence: trimSilence,
     lecture_text: lectureText,
     narrator_voice: narratorVoice,
     narrator_speed: narratorSpeed,
@@ -272,14 +295,51 @@ export default function App() {
     audio_url: audioUrl,
   });
 
+  function applyPausePreset(id: PausePresetId) {
+    const preset = PAUSE_PRESETS.find((item) => item.id === id);
+    if (!preset) return;
+    setPause(preset.speakerChange);
+    setSameSpeakerPause(preset.sameSpeaker);
+    setSectionPause(preset.section);
+  }
+
+  async function persistFavorites(ids: string[]) {
+    setFavoriteVoices(ids);
+    try {
+      await api.savePrefs({ favorite_voices: ids });
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  async function persistDefaultVoice(id: string) {
+    setDefaultVoiceId(id);
+    try {
+      await api.savePrefs({ default_voice_id: id });
+      setStatus(`Default voice: ${id}`);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  function onVoicePicked(voiceId: string) {
+    if (voiceTarget === "narrator") {
+      setNarratorVoice(voiceId);
+    } else {
+      changeSpeakerVoice(voiceTarget, voiceId);
+    }
+  }
+
   function openProject(project: Project) {
     setAppMode(project.mode === "lecture" ? "lecture" : "dialogue");
     setTopic(project.topic || project.name);
     if (project.speakers?.length) setSpeakers(project.speakers);
     if (project.messages?.length) setMessages(sanitizeMessages(project.messages));
     setPause(project.speaker_change_pause ?? 2.5);
+    setSameSpeakerPause(project.same_speaker_pause ?? 0.35);
+    setTrimSilence(Boolean(project.trim_silence));
     setLectureText(project.lecture_text || "");
-    setNarratorVoice(project.narrator_voice || "af_heart");
+    setNarratorVoice(project.narrator_voice || defaultVoiceId || "af_heart");
     setNarratorSpeed(project.narrator_speed ?? 1);
     setSectionPause(project.section_pause ?? 0.85);
     if (project.model_id) setSelectedModelId(project.model_id);
@@ -300,9 +360,11 @@ export default function App() {
     setTopic("");
     setImportText("");
     setPause(2.5);
+    setSameSpeakerPause(0.35);
+    setTrimSilence(false);
     setLectureText("");
     setLecturePlan(null);
-    setNarratorVoice("af_heart");
+    setNarratorVoice(defaultVoiceId || "af_heart");
     setNarratorSpeed(1);
     setSectionPause(0.85);
     setAudioUrl(undefined);
@@ -426,7 +488,8 @@ export default function App() {
         messages,
         speakers,
         speaker_change_pause: pause,
-        same_speaker_pause: 0.35,
+        same_speaker_pause: sameSpeakerPause,
+        trim_silence: trimSilence,
         topic: topic.trim() || "conversation",
       });
       setAudioUrl(result.url);
@@ -463,6 +526,7 @@ export default function App() {
           voice_id: narratorVoice,
           speed: narratorSpeed,
           section_pause: sectionPause,
+          trim_silence: trimSilence,
           model_id: selectedModelId,
         });
         await pollJob(started);
@@ -721,6 +785,19 @@ export default function App() {
             <ActionButton label="Projects" active={panel === "projects"} onClick={() => togglePanel("projects")}>
               <Icon name="project" />
             </ActionButton>
+            <ActionButton
+              label="Voices"
+              active={panel === "voices"}
+              onClick={() => {
+                setVoiceTarget(appMode === "lecture" ? "narrator" : speakers[0]?.id || "narrator");
+                togglePanel("voices");
+              }}
+            >
+              <Icon name="play" />
+            </ActionButton>
+            <ActionButton label="Dict" active={panel === "pronounce"} onClick={() => togglePanel("pronounce")}>
+              <Icon name="help" />
+            </ActionButton>
             <ActionButton label="Reset" onClick={resetAll}>
               <Icon name="reset" />
             </ActionButton>
@@ -738,15 +815,48 @@ export default function App() {
                 {speakersCompact ? "Expand" : "Compact"}
               </button>
             )}
+            <div className="pause-presets" role="group" aria-label="Pause presets">
+              {PAUSE_PRESETS.map((preset) => (
+                <button
+                  key={preset.id}
+                  type="button"
+                  className={pausePreset === preset.id ? "active" : ""}
+                  onClick={() => applyPausePreset(preset.id)}
+                >
+                  {preset.label}
+                </button>
+              ))}
+            </div>
             <label className="pause-inline" title="Pause when speaker changes">
-              Pause
+              Change
               <select value={pause} onChange={(e) => setPause(+e.target.value)}>
-                {[1, 1.5, 2, 2.5, 3, 4].map((v) => (
+                {[0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4].map((v) => (
                   <option value={v} key={v}>
                     {v}s
                   </option>
                 ))}
               </select>
+            </label>
+            <label className="pause-inline" title="Pause between same-speaker lines">
+              Same
+              <select value={sameSpeakerPause} onChange={(e) => setSameSpeakerPause(+e.target.value)}>
+                {[0, 0.2, 0.35, 0.5, 0.6, 0.8, 1].map((v) => (
+                  <option value={v} key={v}>
+                    {v}s
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="check-inline" title="Trim leading/trailing silence on each segment">
+              <input
+                type="checkbox"
+                checked={trimSilence}
+                onChange={(e) => {
+                  setTrimSilence(e.target.checked);
+                  void api.savePrefs({ trim_silence_default: e.target.checked }).catch(() => undefined);
+                }}
+              />
+              Trim silence
             </label>
             {!speakersCompact && (
               <>
@@ -787,10 +897,6 @@ export default function App() {
         ) : (
         <div className="speaker-cards">
           {speakers.map((speaker) => {
-            const allowed = allowedGendersFor(speaker.id, speakers, voices);
-            const voiceOptions = voices.filter((voice) =>
-              allowed.includes(voice.gender as "Female" | "Male"),
-            );
             return (
               <div className="speaker-card" key={speaker.id}>
                 <input
@@ -802,17 +908,16 @@ export default function App() {
                   }
                   aria-label="Speaker name"
                 />
-                <select
-                  value={speaker.voice_id}
-                  onChange={(e) => changeSpeakerVoice(speaker.id, e.target.value)}
-                  aria-label="Voice"
+                <button
+                  type="button"
+                  className="voice-open-btn"
+                  onClick={() => {
+                    setVoiceTarget(speaker.id);
+                    setPanel("voices");
+                  }}
                 >
-                  {voiceOptions.map((v) => (
-                    <option value={v.id} key={v.id}>
-                      {v.name} · {v.gender}
-                    </option>
-                  ))}
-                </select>
+                  {voices.find((v) => v.id === speaker.voice_id)?.name || speaker.voice_id} · pick
+                </button>
                 <div className="speaker-card-foot">
                   <span>{genderOf(speaker.voice_id, voices)}</span>
                   <input
@@ -854,26 +959,52 @@ export default function App() {
         <div className="speaker-bar-head">
           <span>Narrator</span>
           <div className="speaker-bar-actions">
+            <div className="pause-presets" role="group" aria-label="Pause presets">
+              {PAUSE_PRESETS.map((preset) => (
+                <button
+                  key={preset.id}
+                  type="button"
+                  className={Math.abs(sectionPause - preset.section) < 0.05 ? "active" : ""}
+                  onClick={() => applyPausePreset(preset.id)}
+                >
+                  {preset.label}
+                </button>
+              ))}
+            </div>
             <label className="pause-inline" title="Pause between sections">
               Section pause
               <select value={sectionPause} onChange={(e) => setSectionPause(+e.target.value)}>
-                {[0.4, 0.6, 0.85, 1.2, 1.6, 2].map((v) => (
+                {[0.4, 0.6, 0.85, 1.2, 1.5, 1.6, 2].map((v) => (
                   <option value={v} key={v}>
                     {v}s
                   </option>
                 ))}
               </select>
             </label>
+            <label className="check-inline">
+              <input
+                type="checkbox"
+                checked={trimSilence}
+                onChange={(e) => {
+                  setTrimSilence(e.target.checked);
+                  void api.savePrefs({ trim_silence_default: e.target.checked }).catch(() => undefined);
+                }}
+              />
+              Trim silence
+            </label>
           </div>
         </div>
         <div className="narrator-row">
-          <select value={narratorVoice} onChange={(e) => setNarratorVoice(e.target.value)} aria-label="Narrator voice">
-            {voices.map((v) => (
-              <option value={v.id} key={v.id}>
-                {v.name} · {v.gender} · {v.accent}
-              </option>
-            ))}
-          </select>
+          <button
+            type="button"
+            className="voice-open-btn"
+            onClick={() => {
+              setVoiceTarget("narrator");
+              setPanel("voices");
+            }}
+          >
+            {voices.find((v) => v.id === narratorVoice)?.name || narratorVoice} · pick voice
+          </button>
           <label className="pause-inline">
             Speed
             <input
@@ -1213,7 +1344,11 @@ export default function App() {
                     ? "History"
                     : panel === "models"
                       ? "Models"
-                      : "Projects"}
+                      : panel === "projects"
+                        ? "Projects"
+                        : panel === "voices"
+                          ? "Voices"
+                          : "Pronunciation"}
               </h2>
               <ActionButton label="Close" onClick={() => setPanel(null)}>
                 <Icon name="close" />
@@ -1296,6 +1431,36 @@ export default function App() {
                 onError={setError}
                 onStatus={setStatus}
               />
+            )}
+
+            {panel === "voices" && (
+              <div className="drawer-body">
+                <VoicePicker
+                  voices={voices}
+                  value={
+                    voiceTarget === "narrator"
+                      ? narratorVoice
+                      : speakers.find((s) => s.id === voiceTarget)?.voice_id || narratorVoice
+                  }
+                  onChange={onVoicePicked}
+                  favorites={favoriteVoices}
+                  defaultVoiceId={defaultVoiceId}
+                  onFavoritesChange={(ids) => void persistFavorites(ids)}
+                  onDefaultVoiceChange={(id) => void persistDefaultVoice(id)}
+                  onVoicesRefresh={() => void refreshVoices().catch((e) => setError(e.message))}
+                  onError={setError}
+                  onStatus={setStatus}
+                  allowedGenders={
+                    voiceTarget === "narrator"
+                      ? undefined
+                      : allowedGendersFor(voiceTarget, speakers, voices)
+                  }
+                />
+              </div>
+            )}
+
+            {panel === "pronounce" && (
+              <PronunciationPanel onError={setError} onStatus={setStatus} />
             )}
           </aside>
         </div>

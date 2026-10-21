@@ -11,5 +11,6 @@ data/*.json
 data/models/
 data/voices/
 data/benchmarks/
+data/voice_samples/
 .env
 backend/_probe.txt
