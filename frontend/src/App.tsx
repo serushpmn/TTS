@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
+﻿import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { api } from "./api";
 import { CHAT_THEMES, loadChatTheme, saveChatTheme, type ChatTheme } from "./bubbles";
 import { AudioPlayer } from "./components/AudioPlayer";
@@ -6,8 +6,10 @@ import { Icon } from "./components/Icons";
 import { ModelPanel } from "./components/ModelPanel";
 import { ProjectsPanel } from "./components/ProjectsPanel";
 import { PronunciationPanel } from "./components/PronunciationPanel";
+import { Toast } from "./components/Toast";
 import { VoicePicker } from "./components/VoicePicker";
 import { engineLangConflict, exportBasename, filenameFromUrl } from "./delivery";
+import { speakerColorAt, speakerColorById } from "./speakerColors";
 import { clearDraft, formatDuration, loadDraft, saveDraft } from "./draft";
 import { estimateDialogueSeconds } from "./estimate";
 import { isRtl, t, tf, UI_LOCALES, type TranslateFn, type UiLocale } from "./i18n";
@@ -80,7 +82,7 @@ function slugify(value: string) {
 }
 
 function formatEta(seconds: number | null | undefined) {
-  if (seconds == null) return "estimating…";
+  if (seconds == null) return "estimatingâ€¦";
   if (seconds <= 1) return "almost done";
   if (seconds < 60) return `~${Math.ceil(seconds)}s left`;
   const minutes = Math.floor(seconds / 60);
@@ -132,12 +134,14 @@ function AutoTextarea({
   placeholder,
   className,
   onFocus,
+  dir = "auto",
 }: {
   value: string;
   onChange: (value: string) => void;
   placeholder?: string;
   className?: string;
   onFocus?: () => void;
+  dir?: "auto" | "ltr" | "rtl";
 }) {
   const ref = useRef<HTMLTextAreaElement>(null);
   useEffect(() => {
@@ -155,6 +159,7 @@ function AutoTextarea({
       placeholder={placeholder}
       onFocus={onFocus}
       onChange={(e) => onChange(e.target.value)}
+      dir={dir}
     />
   );
 }
@@ -187,9 +192,26 @@ export default function App() {
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [busy, setBusy] = useState(false);
   const [job, setJob] = useState<GenerateJob | null>(null);
-  const [status, setStatus] = useState(() => (restored ? "Draft restored" : ""));
+  const [status, setStatus] = useState("");
+  const [toast, setToast] = useState<{ message: string; action?: "discard" } | null>(() =>
+    restored ? { message: "draftToast", action: "discard" } : null,
+  );
   const [error, setError] = useState("");
   const [showHelp, setShowHelp] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [railOpen, setRailOpen] = useState(() => {
+    try {
+      const raw = localStorage.getItem("ds-rail-open");
+      if (raw === "0") return false;
+      if (raw === "1") return true;
+    } catch {
+      /* ignore */
+    }
+    return typeof window === "undefined" ? true : window.innerWidth > 960;
+  });
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [speakerMenuId, setSpeakerMenuId] = useState<string | null>(null);
+  const lectureRef = useRef<HTMLTextAreaElement | null>(null);
   const [mode, setMode] = useState<ModeId>(() => loadMode());
   const [panel, setPanel] = useState<PanelId>(null);
   const [appMode, setAppMode] = useState<AppMode>(restored?.appMode ?? "dialogue");
@@ -198,7 +220,6 @@ export default function App() {
   const [narratorSpeed, setNarratorSpeed] = useState(restored?.narratorSpeed ?? 1);
   const [sectionPause, setSectionPause] = useState(restored?.sectionPause ?? 0.85);
   const [lecturePlan, setLecturePlan] = useState<LecturePlan | null>(null);
-  const [speakersExpanded, setSpeakersExpanded] = useState(false);
   const [activeMessageId, setActiveMessageId] = useState<string | null>(null);
   const [selectedModelId, setSelectedModelId] = useState(restored?.selectedModelId ?? "kokoro-torch");
   const [playbackRate, setPlaybackRate] = useState(1);
@@ -214,16 +235,6 @@ export default function App() {
   const [dirtyMessageIds, setDirtyMessageIds] = useState<Set<string>>(() => new Set());
   const [regenIndex, setRegenIndex] = useState<number | null>(null);
   const [activeProfile, setActiveProfile] = useState<ProjectProfileId | null>(null);
-  const [deliveryOpen, setDeliveryOpen] = useState(() => {
-    try {
-      const raw = localStorage.getItem("ds-delivery-open");
-      if (raw === "0") return false;
-      if (raw === "1") return true;
-    } catch {
-      /* ignore */
-    }
-    return typeof window === "undefined" ? true : window.innerWidth > 900;
-  });
   const [historyQuery, setHistoryQuery] = useState("");
   const [selectedMessageIds, setSelectedMessageIds] = useState<Set<string>>(() => new Set());
   const jobIdRef = useRef<string | null>(null);
@@ -405,18 +416,6 @@ export default function App() {
     }
   }
 
-  function toggleDeliveryOpen() {
-    setDeliveryOpen((value) => {
-      const next = !value;
-      try {
-        localStorage.setItem("ds-delivery-open", next ? "1" : "0");
-      } catch {
-        /* ignore */
-      }
-      return next;
-    });
-  }
-
   function toggleMessageSelect(messageId: string, additive: boolean) {
     setSelectedMessageIds((prev) => {
       if (!additive) {
@@ -566,11 +565,50 @@ export default function App() {
     setDirtyMessageIds(new Set());
     setActiveProfile(null);
     setPanel(null);
-    setStatus(`Opened “${project.name}”`);
+    setStatus(`Opened â€œ${project.name}â€`);
   }
 
   function togglePanel(next: PanelId) {
     setPanel((current) => (current === next ? null : next));
+  }
+
+  function confirmReset() {
+    if (!window.confirm(tx("confirmReset"))) return;
+    resetAll();
+  }
+
+  function loadSampleDialogue() {
+    const sampleSpeakers = createSpeakers();
+    setSpeakers(sampleSpeakers);
+    setAppMode("dialogue");
+    setTopic("Sample morning standup");
+    setMessages([
+      {
+        id: id(),
+        speaker_id: sampleSpeakers[0].id,
+        text: "Good morning! Ready for a quick standup?",
+        tone_id: "warm",
+      },
+      {
+        id: id(),
+        speaker_id: sampleSpeakers[1].id,
+        text: "Yes. I finished the API review yesterday. [pause] Today I will draft the release notes.",
+        tone_id: "neutral",
+      },
+      {
+        id: id(),
+        speaker_id: sampleSpeakers[0].id,
+        text: "Perfect. Anything blocking you?",
+        tone_id: "calm",
+      },
+      {
+        id: id(),
+        speaker_id: sampleSpeakers[1].id,
+        text: "Not anymore. Let's ship it.",
+        tone_id: "cheerful",
+      },
+    ]);
+    setToast(null);
   }
 
   function resetAll() {
@@ -599,8 +637,8 @@ export default function App() {
     setStatus("");
     setPanel(null);
     setShowHelp(false);
-    setSpeakersExpanded(false);
     setActiveMessageId(null);
+    setSettingsOpen(false);
     setDirtyMessageIds(new Set());
     setRegenIndex(null);
     setActiveProfile(null);
@@ -611,7 +649,7 @@ export default function App() {
 
   async function pollJob(started: GenerateJob) {
     jobIdRef.current = started.id;
-    setJob({ ...started, percent: 1, stage: "Queued…" });
+    setJob({ ...started, percent: 1, stage: "Queuedâ€¦" });
     let latest = started;
     while (latest.status === "queued" || latest.status === "running") {
       await new Promise((resolve) => setTimeout(resolve, 450));
@@ -840,7 +878,7 @@ export default function App() {
         ),
       ];
       if (missing.length) {
-        setError(`New speakers added — set their voices: ${missing.join(", ")}`);
+        setError(`New speakers added â€” set their voices: ${missing.join(", ")}`);
         const additions = missing.map((name) => ({
           id: id(),
           name,
@@ -918,8 +956,7 @@ export default function App() {
   const chatEmpty = appMode === "dialogue" && messages.every((message) => !message.text.trim());
   const lectureEmpty = appMode === "lecture" && !lectureText.trim();
   const filledTurns = messages.filter((message) => message.text.trim()).length;
-  const chatBusy = appMode === "dialogue" && (filledTurns >= 3 || messages.length >= 5);
-  const speakersCompact = chatBusy && !speakersExpanded;
+  const speakerIds = useMemo(() => speakers.map((s) => s.id), [speakers]);
   const dialogueEstimate =
     appMode === "dialogue" && filledTurns > 0
       ? estimateDialogueSeconds(messages, speakers, pause)
@@ -971,148 +1008,306 @@ export default function App() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [busy, generating, panel, showHelp, uiLocale]);
+  const toastMessage = toast ? (toast.message === "draftToast" ? tx("draftToast") : toast.message) : null;
 
   return (
-    <main className={`app-shell locale-${uiLocale}`}>
-      <header className="chrome">
-        <div className="chrome-top">
-          <div className="brand-block">
-            <p className="eyebrow">{tx("brandEyebrow")}</p>
-            <h1>{tx("brandTitle")}</h1>
-          </div>
-
-          <div className="mode-switch" role="tablist" aria-label="App mode">
+    <main className={`app-shell studio-app locale-${uiLocale} ${railOpen ? "" : "rail-collapsed-shell"}`}>
+      <header className="studio-header">
+        <button
+          type="button"
+          className="icon-btn"
+          aria-label={tx("railToggle")}
+          title={tx("railToggle")}
+          onClick={() => {
+            setRailOpen((v) => {
+              const next = !v;
+              try {
+                localStorage.setItem("ds-rail-open", next ? "1" : "0");
+              } catch {
+                /* ignore */
+              }
+              return next;
+            });
+          }}
+        >
+          <Icon name="panel" />
+        </button>
+        <div className="brand-block">
+          <h1>{tx("brandTitle")}</h1>
+        </div>
+        <div className="mode-switch" role="tablist" aria-label="App mode">
+          <button type="button" className={appMode === "dialogue" ? "active" : ""} onClick={() => setAppMode("dialogue")}>
+            {tx("modeDialogue")}
+          </button>
+          <button type="button" className={appMode === "lecture" ? "active" : ""} onClick={() => setAppMode("lecture")}>
+            {tx("modeLecture")}
+          </button>
+        </div>
+        <label className="topic-field">
+          <span>{tx("topic")}</span>
+          <input value={topic} onChange={(e) => setTopic(e.target.value)} placeholder={tx("topicPlaceholder")} aria-label={tx("topic")} />
+        </label>
+        <div className="locale-switch" role="group" aria-label={tx("uiLanguage")}>
+          {UI_LOCALES.map((item) => (
             <button
+              key={item.id}
               type="button"
-              className={appMode === "dialogue" ? "active" : ""}
-              onClick={() => setAppMode("dialogue")}
+              className={uiLocale === item.id ? "active" : ""}
+              onClick={() => void persistLocale(item.id)}
             >
-              {tx("modeDialogue")}
+              {item.label}
             </button>
-            <button
-              type="button"
-              className={appMode === "lecture" ? "active" : ""}
-              onClick={() => setAppMode("lecture")}
-            >
-              {tx("modeLecture")}
-            </button>
-          </div>
-
-          <div className="generate-group">
-            {appMode === "dialogue" && dialogueEstimate != null && !generating && (
-              <span className="duration-estimate" title="Estimated audio length">
-                {formatDuration(dialogueEstimate)}
-              </span>
-            )}
-            {appMode === "lecture" && lecturePlan?.estimated_seconds != null && !generating && (
-              <span className="duration-estimate" title="Estimated audio length">
-                {formatDuration(lecturePlan.estimated_seconds)}
-              </span>
-            )}
-            {generating ? (
-              <button className="danger generate-btn" type="button" onClick={() => void cancelGeneration()}>
-                {tx("cancel")}
-              </button>
-            ) : (
-              <button className="primary generate-btn" disabled={busy} onClick={generate}>
-                {tx("generate")}
-              </button>
+          ))}
+        </div>
+        <div className="tool-row">
+          <ActionButton
+            label={mode === "day" ? tx("night") : tx("day")}
+            onClick={() => setMode((value) => (value === "day" ? "night" : "day"))}
+          >
+            <Icon name={mode === "day" ? "moon" : "sun"} />
+          </ActionButton>
+          {appMode === "dialogue" && (
+            <ActionButton label={tx("import")} active={panel === "import"} onClick={() => togglePanel("import")}>
+              <Icon name="import" />
+            </ActionButton>
+          )}
+          <ActionButton label={tx("history")} active={panel === "history"} onClick={() => togglePanel("history")}>
+            <Icon name="history" />
+          </ActionButton>
+          <ActionButton label={tx("projects")} active={panel === "projects"} onClick={() => togglePanel("projects")}>
+            <Icon name="project" />
+          </ActionButton>
+          <div className="settings-wrap">
+            <ActionButton label={tx("settings")} active={settingsOpen} onClick={() => setSettingsOpen((v) => !v)}>
+              <Icon name="more" />
+            </ActionButton>
+            {settingsOpen && (
+              <div className="settings-menu" role="menu">
+                <button type="button" role="menuitem" onClick={() => { setSettingsOpen(false); setShowHelp(true); }}>
+                  {tx("guide")}
+                </button>
+                <button type="button" role="menuitem" onClick={() => { setSettingsOpen(false); togglePanel("models"); }}>
+                  {tx("models")}
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setSettingsOpen(false);
+                    setVoiceTarget(appMode === "lecture" ? "narrator" : speakers[0]?.id || "narrator");
+                    togglePanel("voices");
+                  }}
+                >
+                  {tx("voices")}
+                </button>
+                <button type="button" role="menuitem" onClick={() => { setSettingsOpen(false); togglePanel("pronounce"); }}>
+                  {tx("dict")}
+                </button>
+                <div className="menu-section">{tx("bubbleTheme")}</div>
+                <div className="chat-theme-switch" role="radiogroup" aria-label={tx("bubbleTheme")}>
+                  {CHAT_THEMES.map((option) => (
+                    <button
+                      key={option.id}
+                      type="button"
+                      role="radio"
+                      aria-checked={chatTheme === option.id}
+                      className={chatTheme === option.id ? "active" : ""}
+                      onClick={() => setChatTheme(option.id)}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+                <button type="button" role="menuitem" className="danger" onClick={() => { setSettingsOpen(false); confirmReset(); }}>
+                  {tx("reset")}
+                </button>
+              </div>
             )}
           </div>
         </div>
-
-        <div className="chrome-tools">
-          <label className="topic-field">
-            <span>{tx("topic")}</span>
-            <input
-              value={topic}
-              onChange={(e) => setTopic(e.target.value)}
-              placeholder={tx("topicPlaceholder")}
-              aria-label={tx("topic")}
-            />
-          </label>
-
-          <div className="locale-switch" role="group" aria-label={tx("uiLanguage")}>
-            {UI_LOCALES.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                className={uiLocale === item.id ? "active" : ""}
-                onClick={() => void persistLocale(item.id)}
-              >
-                {item.label}
-              </button>
-            ))}
-          </div>
-
-          <div className="tool-row">
-            <ActionButton
-              label={mode === "day" ? tx("night") : tx("day")}
-              onClick={() => setMode((value) => (value === "day" ? "night" : "day"))}
-            >
-              <Icon name={mode === "day" ? "moon" : "sun"} />
-            </ActionButton>
-            <ActionButton label={tx("guide")} active={showHelp} onClick={() => setShowHelp((value) => !value)}>
-              <Icon name="help" />
-            </ActionButton>
-            {appMode === "dialogue" && (
-              <ActionButton label={tx("import")} active={panel === "import"} onClick={() => togglePanel("import")}>
-                <Icon name="import" />
-              </ActionButton>
-            )}
-            <ActionButton label={tx("history")} active={panel === "history"} onClick={() => togglePanel("history")}>
-              <Icon name="history" />
-            </ActionButton>
-            <ActionButton label={tx("models")} active={panel === "models"} onClick={() => togglePanel("models")}>
-              <Icon name="model" />
-            </ActionButton>
-            <ActionButton label={tx("projects")} active={panel === "projects"} onClick={() => togglePanel("projects")}>
-              <Icon name="project" />
-            </ActionButton>
-            <ActionButton
-              label={tx("voices")}
-              active={panel === "voices"}
-              onClick={() => {
-                setVoiceTarget(appMode === "lecture" ? "narrator" : speakers[0]?.id || "narrator");
-                togglePanel("voices");
-              }}
-            >
-              <Icon name="play" />
-            </ActionButton>
-            <ActionButton label={tx("dict")} active={panel === "pronounce"} onClick={() => togglePanel("pronounce")}>
-              <Icon name="help" />
-            </ActionButton>
-            <ActionButton label={tx("reset")} onClick={resetAll}>
-              <Icon name="reset" />
-            </ActionButton>
-          </div>
+        <div className="generate-group">
+          {appMode === "dialogue" && dialogueEstimate != null && !generating && (
+            <span className="duration-estimate">{formatDuration(dialogueEstimate)}</span>
+          )}
+          {appMode === "lecture" && lecturePlan?.estimated_seconds != null && !generating && (
+            <span className="duration-estimate">{formatDuration(lecturePlan.estimated_seconds)}</span>
+          )}
+          {generating ? (
+            <button className="danger generate-btn" type="button" onClick={() => void cancelGeneration()}>
+              {tx("cancel")}
+            </button>
+          ) : (
+            <button className={`primary generate-btn ${busy ? "busy" : ""}`} disabled={busy} onClick={generate}>
+              {busy && <span className="spinner" aria-hidden="true" />}
+              {busy ? tx("generating") : tx("generate")}
+            </button>
+          )}
         </div>
       </header>
 
-      <section className={`delivery-bar ${deliveryOpen ? "open" : "collapsed"}`} aria-label={tx("delivery")}>
-        <div className="delivery-bar-head">
-          <strong>{tx("delivery")}</strong>
-          {selectedMessageIds.size > 0 && (
-            <span className="selection-meta">
-              {selectedMessageIds.size} {tx("selectedLines")}
-              <button type="button" className="quiet-btn" onClick={() => setSelectedMessageIds(new Set())}>
-                {tx("clearSelection")}
-              </button>
-            </span>
-          )}
-          <button
-            type="button"
-            className="quiet-btn delivery-toggle"
-            onClick={toggleDeliveryOpen}
-            aria-expanded={deliveryOpen}
-          >
-            {deliveryOpen ? tx("deliveryHide") : tx("deliveryShow")}
-          </button>
-        </div>
-        {deliveryOpen && (
-          <>
-            <div className="profile-row" role="group" aria-label={tx("profiles")}>
-              <span className="delivery-label">{tx("profiles")}</span>
+      <div className={`studio-body ${railOpen ? "" : "rail-collapsed"}`}>
+        <aside className="left-rail" aria-label={tx("speakers")}>
+          <section className="rail-section">
+            <div className="rail-section-head">
+              <h2>{appMode === "lecture" ? tx("narrator") : tx("speakers")}</h2>
+              {appMode === "dialogue" && (
+                <button
+                  type="button"
+                  className="quiet-btn"
+                  onClick={() => {
+                    const defaults = nextSpeakerDefaults(speakers, voices);
+                    setSpeakers((all) => [
+                      ...all,
+                      { id: id(), name: defaults.name, voice_id: defaults.voice_id, speed: 1 },
+                    ]);
+                  }}
+                >
+                  <Icon name="add" /> {tx("addSpeaker")}
+                </button>
+              )}
+            </div>
+
+            {appMode === "dialogue" ? (
+              speakers.map((speaker, index) => {
+                const color = speakerColorAt(index);
+                return (
+                  <div className="speaker-card-compact" key={speaker.id}>
+                    <div className="speaker-avatar" style={{ background: color.bg, color: color.ink }} aria-hidden="true">
+                      {(speaker.name || "?").trim().charAt(0).toUpperCase()}
+                    </div>
+                    <div className="speaker-card-main">
+                      <input
+                        type="text"
+                        value={speaker.name}
+                        aria-label="Speaker name"
+                        onChange={(e) =>
+                          setSpeakers((all) =>
+                            all.map((s) => (s.id === speaker.id ? { ...s, name: e.target.value } : s)),
+                          )
+                        }
+                      />
+                      <button
+                        type="button"
+                        className="voice-open-btn"
+                        onClick={() => {
+                          setVoiceTarget(speaker.id);
+                          setPanel("voices");
+                        }}
+                      >
+                        {voices.find((v) => v.id === speaker.voice_id)?.name || speaker.voice_id} Â· {tx("pickVoice")}
+                      </button>
+                      <label className="speed-row">
+                        <input
+                          type="range"
+                          min={0.5}
+                          max={2}
+                          step={0.1}
+                          value={speaker.speed}
+                          onChange={(e) =>
+                            setSpeakers((all) =>
+                              all.map((s) => (s.id === speaker.id ? { ...s, speed: +e.target.value } : s)),
+                            )
+                          }
+                        />
+                        <span>{tx("speedLabel", { value: speaker.speed.toFixed(1) })}</span>
+                      </label>
+                    </div>
+                    <div className="speaker-card-actions">
+                      <button
+                        type="button"
+                        className="icon-btn"
+                        title={tx("test")}
+                        aria-label={tx("test")}
+                        disabled={busy}
+                        onClick={() => preview("Hello, this is a preview of this voice.", speaker)}
+                      >
+                        <Icon name="play" />
+                      </button>
+                      <div className="menu-pop">
+                        <button
+                          type="button"
+                          className="icon-btn"
+                          aria-label={tx("moreActions")}
+                          onClick={() => setSpeakerMenuId((cur) => (cur === speaker.id ? null : speaker.id))}
+                        >
+                          <Icon name="more" />
+                        </button>
+                        {speakerMenuId === speaker.id && (
+                          <div className="menu-pop-panel">
+                            <button type="button" onClick={() => { randomizeOne(speaker.id); setSpeakerMenuId(null); }}>
+                              {tx("random")}
+                            </button>
+                            <button
+                              type="button"
+                              className="danger"
+                              onClick={() => {
+                                removeSpeaker(speaker.id);
+                                setSpeakerMenuId(null);
+                              }}
+                            >
+                              {tx("remove")}
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })
+            ) : (
+              <div className="speaker-card-compact">
+                <div className="speaker-avatar" style={{ background: speakerColorAt(0).bg }}>
+                  N
+                </div>
+                <div className="speaker-card-main">
+                  <button
+                    type="button"
+                    className="voice-open-btn"
+                    onClick={() => {
+                      setVoiceTarget("narrator");
+                      setPanel("voices");
+                    }}
+                  >
+                    {voices.find((v) => v.id === narratorVoice)?.name || narratorVoice} Â· {tx("pickNarrator")}
+                  </button>
+                  <label className="speed-row">
+                    <input
+                      type="range"
+                      min={0.5}
+                      max={2}
+                      step={0.1}
+                      value={narratorSpeed}
+                      onChange={(e) => setNarratorSpeed(+e.target.value)}
+                    />
+                    <span>{tx("speedLabel", { value: narratorSpeed.toFixed(1) })}</span>
+                  </label>
+                </div>
+                <button
+                  type="button"
+                  className="icon-btn"
+                  title={tx("testVoice")}
+                  aria-label={tx("testVoice")}
+                  disabled={busy || !voices.length}
+                  onClick={() =>
+                    preview("Welcome to this lecture. Today we will cover the main ideas clearly.", {
+                      id: "narrator",
+                      name: "Narrator",
+                      voice_id: narratorVoice,
+                      speed: narratorSpeed,
+                    })
+                  }
+                >
+                  <Icon name="play" />
+                </button>
+              </div>
+            )}
+          </section>
+
+          <section className="rail-section">
+            <div className="rail-section-head">
+              <h2>{tx("delivery")}</h2>
+            </div>
+            <div className="segmented" role="group" aria-label={tx("profiles")}>
               {PROJECT_PROFILES.map((profile) => (
                 <button
                   key={profile.id}
@@ -1125,40 +1320,40 @@ export default function App() {
                 </button>
               ))}
             </div>
-            <div className="tone-row">
-              <span className="delivery-label" title={tx("toneHint")}>
-                {tx("tone")}
-              </span>
-              <div className="tone-chips" role="group" aria-label={tx("tone")}>
-                {tones.map((tone) => (
-                  <span key={tone.id} className={`tone-chip-wrap ${toneId === tone.id ? "active" : ""}`}>
-                    <button
-                      type="button"
-                      className={toneId === tone.id ? "active" : ""}
-                      title={
-                        selectedMessageIds.size
-                          ? `${tone.description} · ${tx("applyToneSelected")}`
-                          : tone.description
+            <div className="tone-chips-wrap" role="group" aria-label={tx("tone")}>
+              {tones.map((tone) => (
+                <button
+                  key={tone.id}
+                  type="button"
+                  className={`tone-chip ${toneId === tone.id ? "active" : ""}`}
+                  title={tone.description}
+                  onClick={() => void persistTone(tone.id)}
+                >
+                  {tone.label}
+                  <span
+                    className="tone-play"
+                    role="button"
+                    tabIndex={0}
+                    title={tx("playToneSample")}
+                    aria-label={`${tx("playToneSample")}: ${tone.label}`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void playToneSample(tone.id);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        void playToneSample(tone.id);
                       }
-                      onClick={() => void persistTone(tone.id)}
-                    >
-                      {tone.label}
-                    </button>
-                    <button
-                      type="button"
-                      className="tone-sample-btn"
-                      title={tx("playToneSample")}
-                      aria-label={`${tx("playToneSample")}: ${tone.label}`}
-                      disabled={busy}
-                      onClick={() => void playToneSample(tone.id)}
-                    >
-                      ▶
-                    </button>
+                    }}
+                  >
+                    â–¶
                   </span>
-                ))}
-              </div>
+                </button>
+              ))}
             </div>
-            <label className="pause-inline synth-lang-field" title={tx("synthLangHint")}>
+            <label className="pause-inline" title={tx("synthLangHint")}>
               {tx("synthLang")}
               <select value={synthLang} onChange={(e) => void persistSynthLang(e.target.value)}>
                 {languages.map((lang) => (
@@ -1169,554 +1364,352 @@ export default function App() {
                 ))}
               </select>
             </label>
-            {(() => {
-              const warn = deliveryConflict();
-              return warn ? (
-                <p className="delivery-warn" role="status">
-                  {warn}
-                </p>
-              ) : null;
-            })()}
-          </>
-        )}
-      </section>
-
-      {appMode === "dialogue" ? (
-      <section className={`speaker-bar ${speakersCompact ? "compact" : ""}`}>
-        <div className="speaker-bar-head">
-          <span>{tx("speakers")}</span>
-          <div className="speaker-bar-actions">
-            {chatBusy && (
-              <button type="button" onClick={() => setSpeakersExpanded((value) => !value)}>
-                {speakersCompact ? tx("expand") : tx("compact")}
-              </button>
+            {deliveryConflict() && (
+              <p className="delivery-warn" role="status">
+                {deliveryConflict()}
+              </p>
             )}
-            <div className="pause-presets" role="group" aria-label={tx("pausePresets")}>
-              {PAUSE_PRESETS.map((preset) => (
-                <button
-                  key={preset.id}
-                  type="button"
-                  className={pausePreset === preset.id ? "active" : ""}
-                  onClick={() => applyPausePreset(preset.id)}
-                >
-                  {preset.label}
-                </button>
-              ))}
+
+            <details className="advanced-block" open={advancedOpen} onToggle={(e) => setAdvancedOpen(e.currentTarget.open)}>
+              <summary title={tx("advancedHint")}>{tx("advanced")}</summary>
+              <div className="advanced-body">
+                <div className="pause-presets" role="group" aria-label={tx("pausePresets")}>
+                  {PAUSE_PRESETS.map((preset) => (
+                    <button
+                      key={preset.id}
+                      type="button"
+                      className={pausePreset === preset.id ? "active" : ""}
+                      onClick={() => applyPausePreset(preset.id)}
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                </div>
+                {appMode === "dialogue" ? (
+                  <>
+                    <label>
+                      {tx("changePause")}
+                      <select value={pause} onChange={(e) => setPause(+e.target.value)}>
+                        {[0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4].map((v) => (
+                          <option value={v} key={v}>
+                            {v}s
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      {tx("samePause")}
+                      <select value={sameSpeakerPause} onChange={(e) => setSameSpeakerPause(+e.target.value)}>
+                        {[0, 0.2, 0.35, 0.5, 0.6, 0.8, 1].map((v) => (
+                          <option value={v} key={v}>
+                            {v}s
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </>
+                ) : (
+                  <label>
+                    {tx("sectionPause")}
+                    <select value={sectionPause} onChange={(e) => setSectionPause(+e.target.value)}>
+                      {[0.4, 0.6, 0.85, 1.2, 1.5, 1.6, 2].map((v) => (
+                        <option value={v} key={v}>
+                          {v}s
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+                <label className="check-inline" title="Trim leading/trailing silence on each segment">
+                  <input
+                    type="checkbox"
+                    checked={trimSilence}
+                    onChange={(e) => {
+                      setTrimSilence(e.target.checked);
+                      void api.savePrefs({ trim_silence_default: e.target.checked }).catch(() => undefined);
+                    }}
+                  />
+                  {tx("trimSilence")}
+                </label>
+                {appMode === "dialogue" && (
+                  <label className="check-inline" title={tx("strictCastHint")}>
+                    <input
+                      type="checkbox"
+                      checked={strictCast}
+                      onChange={(e) => void persistStrictCast(e.target.checked)}
+                    />
+                    {tx("strictCast")}
+                  </label>
+                )}
+              </div>
+            </details>
+          </section>
+        </aside>
+
+        <section className="center-pane">
+          {showHelp && (
+            <p className="hint">
+              {appMode === "lecture" ? tx("helpLecture") : tx("helpDialogue")}
+              <br />
+              <span className="muted">{tx("shortcutHelp")}</span>
+            </p>
+          )}
+          {error && (
+            <div className="notice error">
+              {error}
+              <button type="button" onClick={() => setError("")}>
+                Ã—
+              </button>
             </div>
-            <label className="pause-inline" title="Pause when speaker changes">
-              {tx("changePause")}
-              <select value={pause} onChange={(e) => setPause(+e.target.value)}>
-                {[0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4].map((v) => (
-                  <option value={v} key={v}>
-                    {v}s
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="pause-inline" title="Pause between same-speaker lines">
-              {tx("samePause")}
-              <select value={sameSpeakerPause} onChange={(e) => setSameSpeakerPause(+e.target.value)}>
-                {[0, 0.2, 0.35, 0.5, 0.6, 0.8, 1].map((v) => (
-                  <option value={v} key={v}>
-                    {v}s
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="check-inline" title="Trim leading/trailing silence on each segment">
-              <input
-                type="checkbox"
-                checked={trimSilence}
-                onChange={(e) => {
-                  setTrimSilence(e.target.checked);
-                  void api.savePrefs({ trim_silence_default: e.target.checked }).catch(() => undefined);
-                }}
-              />
-              {tx("trimSilence")}
-            </label>
-            <label className="check-inline" title={tx("strictCastHint")}>
-              <input
-                type="checkbox"
-                checked={strictCast}
-                onChange={(e) => void persistStrictCast(e.target.checked)}
-              />
-              {tx("strictCast")}
-            </label>
-            {!speakersCompact && (
-              <>
-                <button type="button" disabled={!voices.length || speakers.length < 2} onClick={randomizeAll}>
-                  <Icon name="random" /> {tx("randomMix")}
-                </button>
+          )}
+
+          {appMode === "dialogue" ? (
+            <section className={`chat-pane chat-theme-${chatTheme}`}>
+              <div className="chat">
+                {chatEmpty && (
+                  <div className="empty-hero">
+                    <strong>{tx("emptyChatTitle")}</strong>
+                    <p>{tx("emptyChatBody")}</p>
+                    <div className="empty-hero-actions">
+                      <button type="button" className="primary" onClick={loadSampleDialogue}>
+                        {tx("loadSample")}
+                      </button>
+                      <button type="button" onClick={() => togglePanel("import")}>
+                        {tx("importScript")}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const first = messages[0];
+                          if (first) setActiveMessageId(first.id);
+                        }}
+                      >
+                        {tx("pasteText")}
+                      </button>
+                    </div>
+                  </div>
+                )}
+                {messages.map((message, index) => {
+                  const speaker = speakerById.get(message.speaker_id);
+                  const side = speakerSide.get(message.speaker_id) || "left";
+                  const active = activeMessageId === message.id;
+                  const messageTone = message.tone_id || toneId;
+                  const isDirty = dirtyMessageIds.has(message.id);
+                  const isRegening = regenIndex === index;
+                  const isSelected = selectedMessageIds.has(message.id);
+                  const accent = speakerColorById(message.speaker_id, speakerIds);
+                  return (
+                    <article
+                      className={`bubble-row ${side} ${active ? "active" : ""} ${isDirty ? "needs-regen" : ""} ${isRegening ? "regen-busy" : ""} ${isSelected ? "multi-selected" : ""}`}
+                      key={message.id}
+                      data-speaker-color={accent.id}
+                      style={{ ["--speaker-accent" as string]: accent.bg }}
+                      onClick={(event) => {
+                        if (event.ctrlKey || event.metaKey) {
+                          event.preventDefault();
+                          toggleMessageSelect(message.id, true);
+                        }
+                      }}
+                    >
+                      <div className="bubble-stack">
+                        <div className="bubble-meta">
+                          <label className="bubble-speaker">
+                            <select
+                              value={message.speaker_id}
+                              aria-label={tx("speakers")}
+                              onChange={(e) => updateMessage(message, { speaker_id: e.target.value })}
+                              onFocus={() => setActiveMessageId(message.id)}
+                            >
+                              {speakers.map((s) => (
+                                <option key={s.id} value={s.id}>
+                                  {s.name}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          {tones.length > 0 && (
+                            <label className="bubble-tone">
+                              <select
+                                value={messageTone}
+                                aria-label={tx("tone")}
+                                onChange={(e) => updateMessage(message, { tone_id: e.target.value })}
+                                onFocus={() => setActiveMessageId(message.id)}
+                              >
+                                {tones.map((tone) => (
+                                  <option key={tone.id} value={tone.id}>
+                                    {tone.label}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                          )}
+                          {isDirty && <span className="edited-badge">{tx("lineEdited")}</span>}
+                        </div>
+                        <div className={`bubble ${side}`}>
+                          <AutoTextarea
+                            className="bubble-input"
+                            value={message.text}
+                            placeholder={tx("messagePlaceholder")}
+                            onFocus={() => setActiveMessageId(message.id)}
+                            onChange={(value) => updateMessage(message, { text: value })}
+                            dir="auto"
+                          />
+                          <div className="bubble-actions">
+                            <button
+                              type="button"
+                              title={tx("preview")}
+                              aria-label={tx("preview")}
+                              disabled={!message.text.trim() || !speaker || busy}
+                              onClick={() => speaker && preview(message.text, speaker, message.tone_id || toneId)}
+                            >
+                              â–¶
+                            </button>
+                            <button
+                              type="button"
+                              className={isDirty ? "regen-needed" : ""}
+                              title={tx("regenHint")}
+                              aria-label={tx("regenerateLine")}
+                              disabled={!message.text.trim() || !speaker || busy || !topic.trim()}
+                              onClick={() => void regenerateMessage(message, index)}
+                            >
+                              {isRegening ? "â€¦" : "â†»"}
+                            </button>
+                            <button type="button" title={tx("moveUp")} aria-label={tx("moveUp")} onClick={() => move(index, -1)}>
+                              â†‘
+                            </button>
+                            <button type="button" title={tx("moveDown")} aria-label={tx("moveDown")} onClick={() => move(index, 1)}>
+                              â†“
+                            </button>
+                            <button
+                              type="button"
+                              title={tx("duplicate")}
+                              aria-label={tx("duplicate")}
+                              onClick={() =>
+                                setMessages((items) => {
+                                  const copy = [...items];
+                                  copy.splice(index + 1, 0, { ...message, id: id() });
+                                  return copy;
+                                })
+                              }
+                            >
+                              â§‰
+                            </button>
+                            <button
+                              type="button"
+                              className="danger"
+                              title={tx("delete")}
+                              aria-label={tx("delete")}
+                              onClick={() => setMessages((items) => items.filter((item) => item.id !== message.id))}
+                            >
+                              Ã—
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+              <div className="composer-toolbar" aria-label={tx("insertTags")}>
                 <button
                   type="button"
+                  className="quiet-btn"
                   onClick={() => {
-                    const defaults = nextSpeakerDefaults(speakers, voices);
-                    setSpeakers((all) => [
-                      ...all,
-                      { id: id(), name: defaults.name, voice_id: defaults.voice_id, speed: 1 },
+                    const speakerId = speakers[messages.length % speakers.length]?.id || speakers[0]?.id || "";
+                    setMessages([
+                      ...messages,
+                      { id: id(), speaker_id: speakerId, text: "", tone_id: toneId },
                     ]);
                   }}
                 >
-                  <Icon name="add" /> {tx("addSpeaker")}
+                  + {tx("addMessage")}
                 </button>
-              </>
-            )}
-          </div>
-        </div>
-        {speakersCompact ? (
-          <div className="speaker-compact-row">
-            {speakers.map((speaker) => (
-              <button
-                type="button"
-                className="speaker-chip"
-                key={speaker.id}
-                title={`${speaker.name} · ${speaker.voice_id}`}
-                onClick={() => setSpeakersExpanded(true)}
-              >
-                <strong>{speaker.name}</strong>
-                <span>{speaker.voice_id}</span>
-              </button>
-            ))}
-          </div>
-        ) : (
-        <div className="speaker-cards">
-          {speakers.map((speaker) => {
-            return (
-              <div className="speaker-card" key={speaker.id}>
-                <input
-                  value={speaker.name}
-                  onChange={(e) =>
-                    setSpeakers((all) =>
-                      all.map((s) => (s.id === speaker.id ? { ...s, name: e.target.value } : s)),
-                    )
-                  }
-                  aria-label="Speaker name"
-                />
-                <button
-                  type="button"
-                  className="voice-open-btn"
-                  onClick={() => {
-                    setVoiceTarget(speaker.id);
-                    setPanel("voices");
-                  }}
-                >
-                  {voices.find((v) => v.id === speaker.voice_id)?.name || speaker.voice_id} · {tx("pickVoice")}
-                </button>
-                <div className="speaker-card-foot">
-                  <span>{genderOf(speaker.voice_id, voices)}</span>
-                  <input
-                    type="number"
-                    min="0.5"
-                    max="2"
-                    step="0.1"
-                    value={speaker.speed}
-                    title={tx("speed")}
-                    aria-label={tx("speed")}
-                    onChange={(e) =>
-                      setSpeakers((all) =>
-                        all.map((s) => (s.id === speaker.id ? { ...s, speed: +e.target.value } : s)),
-                      )
-                    }
-                  />
-                  <ActionButton label={tx("random")} onClick={() => randomizeOne(speaker.id)} disabled={!voices.length}>
-                    <Icon name="random" />
-                  </ActionButton>
-                  <ActionButton
-                    label={tx("test")}
-                    disabled={busy}
-                    onClick={() => preview("Hello, this is a preview of this voice.", speaker)}
-                  >
-                    <Icon name="play" />
-                  </ActionButton>
-                  <ActionButton label={tx("remove")} variant="danger" onClick={() => removeSpeaker(speaker.id)}>
-                    <Icon name="close" />
-                  </ActionButton>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-        )}
-      </section>
-      ) : (
-      <section className="speaker-bar narrator-bar">
-        <div className="speaker-bar-head">
-          <span>{tx("narrator")}</span>
-          <div className="speaker-bar-actions">
-            <div className="pause-presets" role="group" aria-label={tx("pausePresets")}>
-              {PAUSE_PRESETS.map((preset) => (
-                <button
-                  key={preset.id}
-                  type="button"
-                  className={Math.abs(sectionPause - preset.section) < 0.05 ? "active" : ""}
-                  onClick={() => applyPausePreset(preset.id)}
-                >
-                  {preset.label}
-                </button>
-              ))}
-            </div>
-            <label className="pause-inline" title="Pause between sections">
-              {tx("sectionPause")}
-              <select value={sectionPause} onChange={(e) => setSectionPause(+e.target.value)}>
-                {[0.4, 0.6, 0.85, 1.2, 1.5, 1.6, 2].map((v) => (
-                  <option value={v} key={v}>
-                    {v}s
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="check-inline">
-              <input
-                type="checkbox"
-                checked={trimSilence}
-                onChange={(e) => {
-                  setTrimSilence(e.target.checked);
-                  void api.savePrefs({ trim_silence_default: e.target.checked }).catch(() => undefined);
-                }}
-              />
-              {tx("trimSilence")}
-            </label>
-          </div>
-        </div>
-        <div className="narrator-row">
-          <button
-            type="button"
-            className="voice-open-btn"
-            onClick={() => {
-              setVoiceTarget("narrator");
-              setPanel("voices");
-            }}
-          >
-            {voices.find((v) => v.id === narratorVoice)?.name || narratorVoice} · {tx("pickNarrator")}
-          </button>
-          <label className="pause-inline">
-            {tx("speed")}
-            <input
-              type="number"
-              min="0.5"
-              max="2"
-              step="0.1"
-              value={narratorSpeed}
-              onChange={(e) => setNarratorSpeed(+e.target.value)}
-            />
-          </label>
-          <ActionButton
-            label={tx("testVoice")}
-            disabled={busy || !voices.length}
-            onClick={() =>
-              preview("Welcome to this lecture. Today we will cover the main ideas clearly.", {
-                id: "narrator",
-                name: "Narrator",
-                voice_id: narratorVoice,
-                speed: narratorSpeed,
-              })
-            }
-          >
-            <Icon name="play" />
-          </ActionButton>
-          {lecturePlan && (
-            <span className="plan-meta">
-              {lecturePlan.count} sections · {lecturePlan.characters.toLocaleString()} chars
-              {lecturePlan.estimated_seconds != null && (
-                <> · {formatDuration(lecturePlan.estimated_seconds)}</>
-              )}
-            </span>
-          )}
-        </div>
-      </section>
-      )}
-
-      {showHelp && (
-        <p className="hint">
-          {appMode === "lecture" ? tx("helpLecture") : tx("helpDialogue")}
-          <br />
-          <span className="muted">{tx("shortcutHelp")}</span>
-        </p>
-      )}
-
-      {error && (
-        <div className="notice error">
-          {error}
-          <button type="button" onClick={() => setError("")}>
-            ×
-          </button>
-        </div>
-      )}
-
-      {generating && job && (
-        <section className="progress-inline">
-          <div className="progress-meta">
-            <strong>{job.stage}</strong>
-            <span>
-              {formatEta(job.eta_seconds)} · {Math.round(job.percent)}%
-            </span>
-          </div>
-          <div className="progress-track">
-            <div className="progress-fill" style={{ width: `${Math.max(job.percent, 4)}%` }} />
-          </div>
-          <button type="button" className="cancel-inline" onClick={() => void cancelGeneration()}>
-            <Icon name="stop" /> {tx("stopGeneration")}
-          </button>
-        </section>
-      )}
-
-      <div className="workspace">
-        {appMode === "dialogue" ? (
-        <section className={`chat-pane chat-theme-${chatTheme}`}>
-          <div className="section-heading chat-toolbar">
-            <div className="chat-toolbar-left">
-              <h2>{tx("chat")}</h2>
-              <div className="chat-theme-switch" role="radiogroup" aria-label="Chat theme">
-                {CHAT_THEMES.map((option) => (
+                {tagActions.map((action) => (
                   <button
-                    key={option.id}
+                    key={action.tag}
                     type="button"
-                    role="radio"
-                    aria-checked={chatTheme === option.id}
-                    className={chatTheme === option.id ? "active" : ""}
-                    onClick={() => setChatTheme(option.id)}
+                    title={action.title}
+                    aria-label={action.title}
+                    onClick={() => insertTag(action.tag)}
+                    disabled={busy}
                   >
-                    {option.label}
+                    <Icon name="pause" /> {action.label}
+                  </button>
+                ))}
+                {selectedMessageIds.size > 0 && (
+                  <button type="button" className="quiet-btn" onClick={() => setSelectedMessageIds(new Set())}>
+                    {tx("clearSelection")} ({selectedMessageIds.size})
+                  </button>
+                )}
+              </div>
+            </section>
+          ) : (
+            <section className="chat-pane lecture-pane">
+              <div className="section-heading">
+                <h2>{tx("lectureScript")}</h2>
+                <span className="plan-meta">
+                  {lecturePlan
+                    ? `${lecturePlan.count} sections Â· ${formatDuration(lecturePlan.estimated_seconds ?? Math.max(1, Math.round(lecturePlan.characters / 13.5)))}`
+                    : tx("pasteLecturePlaceholder")}
+                </span>
+              </div>
+              {lectureEmpty && (
+                <div className="empty-hero">
+                  <strong>{tx("pasteLecture")}</strong>
+                  <p>{tx("pasteLectureHint")}</p>
+                </div>
+              )}
+              <textarea
+                ref={lectureRef}
+                className="lecture-editor"
+                value={lectureText}
+                onChange={(e) => setLectureText(e.target.value)}
+                dir="auto"
+                placeholder={
+                  "Paste your full lecture or presentation notes here.\n\nUse a blank line between paragraphs/sections."
+                }
+              />
+              <div className="composer-toolbar" aria-label={tx("insertTags")}>
+                {tagActions.map((action) => (
+                  <button
+                    key={action.tag}
+                    type="button"
+                    title={action.title}
+                    aria-label={action.title}
+                    onClick={() => insertTag(action.tag)}
+                    disabled={busy}
+                  >
+                    <Icon name="pause" /> {action.label}
                   </button>
                 ))}
               </div>
-            </div>
-            <div className="chat-heading-actions">
-              {dialogueEstimate != null && (
-                <span className="plan-meta">{formatDuration(dialogueEstimate)}</span>
-              )}
-              <button
-                type="button"
-                className="quiet-btn"
-                onClick={() => {
-                  const speakerId = speakers[messages.length % speakers.length]?.id || speakers[0]?.id || "";
-                  setMessages([
-                    ...messages,
-                    {
-                      id: id(),
-                      speaker_id: speakerId,
-                      text: "",
-                      tone_id: toneId,
-                    },
-                  ]);
-                }}
-              >
-                + {tx("addMessage")}
-              </button>
-            </div>
-          </div>
+            </section>
+          )}
+        </section>
 
-          <div className="chat">
-            {chatEmpty && (
-              <div className="empty-state chat-empty">
-                <strong>{tx("startConversation")}</strong>
-                <p>{tx("startConversationHint")}</p>
+        <aside className="output-pane">
+          {generating && job && (
+            <div className="gen-progress">
+              <div className="progress-meta">
+                <strong>{job.stage}</strong>
+                <span>
+                  {formatEta(job.eta_seconds)} Â· {Math.round(job.percent)}%
+                </span>
               </div>
-            )}
-            {messages.map((message, index) => {
-              const speaker = speakerById.get(message.speaker_id);
-              const side = speakerSide.get(message.speaker_id) || "left";
-              const active = activeMessageId === message.id;
-              const messageTone = message.tone_id || toneId;
-              const isDirty = dirtyMessageIds.has(message.id);
-              const isRegening = regenIndex === index;
-              const isSelected = selectedMessageIds.has(message.id);
-              return (
-                <article
-                  className={`bubble-row ${side} ${active ? "active" : ""} ${isDirty ? "needs-regen" : ""} ${isRegening ? "regen-busy" : ""} ${isSelected ? "multi-selected" : ""}`}
-                  key={message.id}
-                  onClick={(event) => {
-                    if (event.ctrlKey || event.metaKey) {
-                      event.preventDefault();
-                      toggleMessageSelect(message.id, true);
-                    }
-                  }}
-                >
-                  <div className="bubble-stack">
-                    <div className="bubble-meta">
-                      <label className="bubble-speaker">
-                        <select
-                          value={message.speaker_id}
-                          aria-label={tx("speakers")}
-                          onChange={(e) => updateMessage(message, { speaker_id: e.target.value })}
-                          onFocus={() => setActiveMessageId(message.id)}
-                        >
-                          {speakers.map((s) => (
-                            <option key={s.id} value={s.id}>
-                              {s.name}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                      {tones.length > 0 && (
-                        <label className="bubble-tone">
-                          <select
-                            value={messageTone}
-                            aria-label={tx("tone")}
-                            title={tx("toneHint")}
-                            onChange={(e) => updateMessage(message, { tone_id: e.target.value })}
-                            onFocus={() => setActiveMessageId(message.id)}
-                          >
-                            {tones.map((tone) => (
-                              <option key={tone.id} value={tone.id}>
-                                {tone.label}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                      )}
-                      {isDirty && <span className="edited-badge">{tx("lineEdited")}</span>}
-                    </div>
-                    <div className={`bubble ${side}`}>
-                      <AutoTextarea
-                        className="bubble-input"
-                        value={message.text}
-                        placeholder={tx("messagePlaceholder")}
-                        onFocus={() => setActiveMessageId(message.id)}
-                        onChange={(value) => updateMessage(message, { text: value })}
-                      />
-                      <div className="bubble-actions">
-                        <button
-                          type="button"
-                          title={tx("preview")}
-                          disabled={!message.text.trim() || !speaker || busy}
-                          onClick={() => speaker && preview(message.text, speaker, message.tone_id || toneId)}
-                        >
-                          ▶
-                        </button>
-                        <button
-                          type="button"
-                          className={isDirty ? "regen-needed" : ""}
-                          title={tx("regenHint")}
-                          disabled={!message.text.trim() || !speaker || busy || !topic.trim()}
-                          onClick={() => void regenerateMessage(message, index)}
-                        >
-                          {isRegening ? "…" : "↻"}
-                        </button>
-                        <button type="button" title={tx("moveUp")} onClick={() => move(index, -1)}>
-                          ↑
-                        </button>
-                        <button type="button" title={tx("moveDown")} onClick={() => move(index, 1)}>
-                          ↓
-                        </button>
-                        <button
-                          type="button"
-                          title={tx("duplicate")}
-                          onClick={() =>
-                            setMessages((items) => {
-                              const copy = [...items];
-                              copy.splice(index + 1, 0, { ...message, id: id() });
-                              return copy;
-                            })
-                          }
-                        >
-                          ⧉
-                        </button>
-                        <button
-                          type="button"
-                          className="danger"
-                          title={tx("delete")}
-                          onClick={() => setMessages((items) => items.filter((item) => item.id !== message.id))}
-                        >
-                          ×
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </article>
-              );
-            })}
-          </div>
-
-          <div className="chat-compose-bar" aria-label={tx("insertTags")}>
-            {tagActions.map((action) => (
-              <button
-                key={action.tag}
-                type="button"
-                className="compose-chip"
-                title={action.title}
-                onClick={() => insertTag(action.tag)}
-                disabled={busy}
-              >
-                {action.label}
+              <div className="progress-track">
+                <div className="progress-fill" style={{ width: `${Math.max(job.percent, 4)}%` }} />
+              </div>
+              <button type="button" className="danger" onClick={() => void cancelGeneration()}>
+                <Icon name="stop" /> {tx("stopGeneration")}
               </button>
-            ))}
-          </div>
-        </section>
-        ) : (
-        <section className="chat-pane lecture-pane">
-          <div className="section-heading">
-            <h2>{tx("lectureScript")}</h2>
-            <span className="plan-meta">
-              {lecturePlan
-                ? `${lecturePlan.count} sections · ${formatDuration(lecturePlan.estimated_seconds ?? Math.max(1, Math.round(lecturePlan.characters / 13.5)))}`
-                : tx("pasteLecturePlaceholder")}
-            </span>
-          </div>
-          {lectureEmpty && (
-            <div className="empty-state">
-              <strong>{tx("pasteLecture")}</strong>
-              <p>{tx("pasteLectureHint")}</p>
             </div>
           )}
-          <textarea
-            className="lecture-editor"
-            value={lectureText}
-            onChange={(e) => setLectureText(e.target.value)}
-            placeholder={
-              "Paste your full lecture or presentation notes here.\n\n" +
-              "Use a blank line between paragraphs/sections.\n\n" +
-              "Example:\n\n" +
-              "Welcome everyone. Today we cover three ideas.\n\n" +
-              "First, the problem we are solving...\n\n" +
-              "Second, the approach...\n\n" +
-              "Finally, the takeaways. [pause:1s] Thank you."
-            }
-          />
-          {lecturePlan && lecturePlan.count > 0 && (
-            <div className="lecture-preview">
-              <strong>{tx("sectionsPreview")}</strong>
-              <ol>
-                {lecturePlan.chunks.slice(0, 8).map((chunk, index) => (
-                  <li key={`${index}-${chunk.slice(0, 24)}`}>
-                    {chunk.length > 140 ? `${chunk.slice(0, 140)}…` : chunk}
-                  </li>
-                ))}
-              </ol>
-              {lecturePlan.count > 8 && (
-                <p className="muted">
-                  +{lecturePlan.count - 8} {tx("moreSections")}
-                </p>
-              )}
-            </div>
-          )}
-          <div className="chat-compose-bar" aria-label={tx("insertTags")}>
-            {tagActions.map((action) => (
-              <button
-                key={action.tag}
-                type="button"
-                className="compose-chip"
-                title={action.title}
-                onClick={() => insertTag(action.tag)}
-                disabled={busy}
-              >
-                {action.label}
-              </button>
-            ))}
-          </div>
-        </section>
-        )}
 
-        <aside className="side-pane">
           {audioUrl ? (
             <section className="panel player">
-              <div className="player-head">
-                <div className="audio-sphere" aria-hidden="true" />
-                <h2>{audioName || tx("ready")}</h2>
-              </div>
+              <h2>{audioName || tx("ready")}</h2>
               <AudioPlayer
                 src={api.base + audioUrl}
-                label={`Model: ${selectedModelId}`}
                 playbackRate={playbackRate}
                 onPlaybackRateChange={(rate) => {
                   setPlaybackRate(rate);
@@ -1747,31 +1740,39 @@ export default function App() {
                 <button type="button" className="quiet-btn" onClick={() => void copyAudioPath(audioUrl)}>
                   {tx("copyPath")}
                 </button>
-                <button
-                  type="button"
-                  className="quiet-btn"
-                  onClick={() => void copyText(api.base + audioUrl, "urlCopied")}
-                >
+                <button type="button" className="quiet-btn" onClick={() => void copyText(api.base + audioUrl, "urlCopied")}>
                   {tx("copyUrl")}
                 </button>
-                {mp3Url && (
-                  <button type="button" className="quiet-btn" onClick={() => void copyAudioPath(mp3Url)}>
-                    {tx("copyPath")} MP3
-                  </button>
-                )}
               </div>
             </section>
           ) : (
             <section className="panel empty-side">
-              <div className="audio-sphere" aria-hidden="true" />
               <p>{tx("generateEmpty")}</p>
-              <p className="muted shortcut-hint">Ctrl+Enter · Esc to cancel</p>
-              <p className="muted">Model: {selectedModelId}</p>
+              <p className="muted shortcut-hint">Ctrl+Enter Â· Esc</p>
             </section>
           )}
+          <p className="model-footnote">
+            {tx("selectedPrefix")}: {selectedModelId}
+          </p>
           {status && !generating && <div className="notice tight">{status}</div>}
         </aside>
       </div>
+
+      {toastMessage && (
+        <Toast
+          message={toastMessage}
+          onDismiss={() => setToast(null)}
+          actionLabel={toast?.action === "discard" ? tx("discardDraft") : undefined}
+          onAction={
+            toast?.action === "discard"
+              ? () => {
+                  setToast(null);
+                  confirmReset();
+                }
+              : undefined
+          }
+        />
+      )}
 
       {panel && (
         <div className="drawer-backdrop" onClick={() => setPanel(null)}>
@@ -1801,9 +1802,7 @@ export default function App() {
                 <AutoTextarea
                   value={importText}
                   onChange={setImportText}
-                  placeholder={
-                    "Sarah: Hello\nJohn: Hi there\n\n# or SRT / CSV / [Sarah] Hello / - Alex: Hey"
-                  }
+                  placeholder={"Sarah: Hello\nJohn: Hi there"}
                 />
                 <button type="submit" className="primary" disabled={busy || !importText.trim()}>
                   {tx("parseIntoChat")}
@@ -1823,15 +1822,13 @@ export default function App() {
                   />
                 </label>
                 {!history.length && <p className="muted">{tx("noExports")}</p>}
-                {history.length > 0 && !filteredHistory.length && (
-                  <p className="muted">{tx("noSearchResults")}</p>
-                )}
+                {history.length > 0 && !filteredHistory.length && <p className="muted">{tx("noSearchResults")}</p>}
                 {filteredHistory.map((item) => (
                   <div className="history-item" key={item.id}>
                     <div>
                       <strong>{item.topic}</strong>
                       <span>{formatWhen(item.created_at)}</span>
-                      {item.model_id && <span className="muted"> · {item.model_id}</span>}
+                      {item.model_id && <span className="muted"> Â· {item.model_id}</span>}
                     </div>
                     <div className="history-actions">
                       <a className="link-btn" href={api.base + item.url} download={item.filename}>
@@ -1885,13 +1882,7 @@ export default function App() {
             )}
 
             {panel === "projects" && (
-              <ProjectsPanel
-                current={makeProject()}
-                onOpen={openProject}
-                onError={setError}
-                onStatus={setStatus}
-                t={tx}
-              />
+              <ProjectsPanel current={makeProject()} onOpen={openProject} onError={setError} onStatus={setStatus} t={tx} />
             )}
 
             {panel === "voices" && (
@@ -1921,9 +1912,7 @@ export default function App() {
               </div>
             )}
 
-            {panel === "pronounce" && (
-              <PronunciationPanel onError={setError} onStatus={setStatus} t={tx} />
-            )}
+            {panel === "pronounce" && <PronunciationPanel onError={setError} onStatus={setStatus} t={tx} />}
           </aside>
         </div>
       )}

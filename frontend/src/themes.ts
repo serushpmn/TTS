@@ -13,7 +13,12 @@ export function loadTheme(): ThemeId {
 }
 
 export function loadMode(): ModeId {
-  return localStorage.getItem(MODE_KEY) === "night" ? "night" : "day";
+  const saved = localStorage.getItem(MODE_KEY);
+  if (saved === "night" || saved === "day") return saved;
+  if (typeof window !== "undefined" && window.matchMedia("(prefers-color-scheme: dark)").matches) {
+    return "night";
+  }
+  return "day";
 }
 
 export function applyAppearance(_theme: ThemeId, mode: ModeId) {

@@ -8,7 +8,13 @@
     <script>
       (() => {
         try {
-          const mode = localStorage.getItem("dialogue-studio-mode") === "night" ? "night" : "day";
+          const saved = localStorage.getItem("dialogue-studio-mode");
+          const mode =
+            saved === "night" || saved === "day"
+              ? saved
+              : window.matchMedia("(prefers-color-scheme: dark)").matches
+                ? "night"
+                : "day";
           document.documentElement.setAttribute("data-theme", "studio");
           document.documentElement.setAttribute("data-mode", mode);
         } catch (_) {}

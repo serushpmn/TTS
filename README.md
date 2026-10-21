@@ -80,16 +80,15 @@ Use **EN / FA / DE** in the header. Persian (FA) switches the layout to RTL. Cho
 
 | Control | Action |
 |---------|--------|
+| Speakers panel | Toggle left rail |
+| Dialogue / Lecture | App mode |
+| EN / FA / DE | UI language (speech language lives in Delivery) |
 | Night / Day | Appearance |
-| Guide | Short help |
-| Import | Paste dialogue (`Speaker:`, SRT, CSV/TSV, `[Name]`, bullets) |
-| Profiles | Podcast / Lecture / Story presets (pauses + trim + tone) |
-| Delivery | Collapsible tone / speech-language / profiles bar |
-| History | Open / download / delete past exports |
-| Models | Select / download / load / delete ONNX models; benchmark |
-| Projects | Save / open / rename / duplicate / delete projects |
-| Reset | Clear workspace |
-| Generate audio | Start synthesis (Esc cancels) |
+| Import · History · Projects | Frequent tools |
+| ⋯ Settings | Guide, Models, Voices, Dict, bubble theme, Reset (confirm) |
+| Generate audio | Primary action (Ctrl+Enter; Esc cancels) |
+
+**Layout:** left rail = Speakers + Delivery (profiles, tones, speech language, Advanced timing); center chat/lecture fills the viewport; right = player + WAV/MP3.
 
 ---
 
