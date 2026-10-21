@@ -10,7 +10,7 @@ import { VoicePicker } from "./components/VoicePicker";
 import { engineLangConflict, exportBasename, filenameFromUrl } from "./delivery";
 import { clearDraft, formatDuration, loadDraft, saveDraft } from "./draft";
 import { estimateDialogueSeconds } from "./estimate";
-import { isRtl, t, UI_LOCALES, type UiLocale } from "./i18n";
+import { isRtl, t, tf, UI_LOCALES, type TranslateFn, type UiLocale } from "./i18n";
 import { matchPausePreset, PAUSE_PRESETS, type PausePresetId } from "./pausePresets";
 import { PROJECT_PROFILES, type ProjectProfileId } from "./projectProfiles";
 import { applyAppearance, loadMode, type ModeId } from "./themes";
@@ -214,11 +214,31 @@ export default function App() {
   const [dirtyMessageIds, setDirtyMessageIds] = useState<Set<string>>(() => new Set());
   const [regenIndex, setRegenIndex] = useState<number | null>(null);
   const [activeProfile, setActiveProfile] = useState<ProjectProfileId | null>(null);
+  const [deliveryOpen, setDeliveryOpen] = useState(() => {
+    try {
+      const raw = localStorage.getItem("ds-delivery-open");
+      if (raw === "0") return false;
+      if (raw === "1") return true;
+    } catch {
+      /* ignore */
+    }
+    return typeof window === "undefined" ? true : window.innerWidth > 900;
+  });
+  const [historyQuery, setHistoryQuery] = useState("");
+  const [selectedMessageIds, setSelectedMessageIds] = useState<Set<string>>(() => new Set());
   const jobIdRef = useRef<string | null>(null);
   const audioReadyRef = useRef(false);
   const pausePreset = matchPausePreset(pause, sameSpeakerPause);
-  const tx = (key: string) => t(uiLocale, key);
+  const tx: TranslateFn = (key, vars) => (vars ? tf(uiLocale, key, vars) : t(uiLocale, key));
   const tagActions = useMemo(() => ssmlActions(uiLocale), [uiLocale]);
+  const filteredHistory = useMemo(() => {
+    const q = historyQuery.trim().toLowerCase();
+    if (!q) return history;
+    return history.filter((item) => {
+      const hay = `${item.topic} ${item.model_id || ""} ${item.filename}`.toLowerCase();
+      return hay.includes(q);
+    });
+  }, [history, historyQuery]);
 
   const speakerById = useMemo(() => new Map(speakers.map((s) => [s.id, s])), [speakers]);
   const speakerSide = useMemo(() => {
@@ -365,11 +385,48 @@ export default function App() {
 
   async function persistTone(next: string) {
     setToneId(next);
+    if (selectedMessageIds.size > 0) {
+      setMessages((items) =>
+        items.map((item) => (selectedMessageIds.has(item.id) ? { ...item, tone_id: next } : item)),
+      );
+      if (audioReadyRef.current) {
+        setDirtyMessageIds((prev) => {
+          const dirty = new Set(prev);
+          selectedMessageIds.forEach((id) => dirty.add(id));
+          return dirty;
+        });
+      }
+      setStatus(tx("applyToneSelected"));
+    }
     try {
       await api.savePrefs({ default_tone_id: next });
     } catch (e) {
       setError((e as Error).message);
     }
+  }
+
+  function toggleDeliveryOpen() {
+    setDeliveryOpen((value) => {
+      const next = !value;
+      try {
+        localStorage.setItem("ds-delivery-open", next ? "1" : "0");
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  }
+
+  function toggleMessageSelect(messageId: string, additive: boolean) {
+    setSelectedMessageIds((prev) => {
+      if (!additive) {
+        return prev.has(messageId) && prev.size === 1 ? new Set() : new Set([messageId]);
+      }
+      const next = new Set(prev);
+      if (next.has(messageId)) next.delete(messageId);
+      else next.add(messageId);
+      return next;
+    });
   }
 
   async function persistSynthLang(next: string) {
@@ -547,6 +604,8 @@ export default function App() {
     setDirtyMessageIds(new Set());
     setRegenIndex(null);
     setActiveProfile(null);
+    setSelectedMessageIds(new Set());
+    setHistoryQuery("");
     audioReadyRef.current = false;
   }
 
@@ -898,13 +957,20 @@ export default function App() {
         return;
       }
 
+      if ((event.ctrlKey || event.metaKey) && event.key === ".") {
+        event.preventDefault();
+        insertTag(event.shiftKey ? "[pause:1.5s]" : "[pause]");
+        setStatus(tx("shortcutPause"));
+        return;
+      }
+
       if (!typing && event.key === "?" && !event.ctrlKey && !event.metaKey) {
         setShowHelp((value) => !value);
       }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [busy, generating, panel, showHelp]);
+  }, [busy, generating, panel, showHelp, uiLocale]);
 
   return (
     <main className={`app-shell locale-${uiLocale}`}>
@@ -1023,69 +1089,96 @@ export default function App() {
         </div>
       </header>
 
-      <section className="delivery-bar" aria-label={tx("tone")}>
-        <div className="profile-row" role="group" aria-label={tx("profiles")}>
-          <span className="delivery-label">{tx("profiles")}</span>
-          {PROJECT_PROFILES.map((profile) => (
-            <button
-              key={profile.id}
-              type="button"
-              className={activeProfile === profile.id ? "active" : ""}
-              title={tx(profile.hintKey)}
-              onClick={() => applyProjectProfile(profile.id)}
-            >
-              {tx(profile.labelKey)}
-            </button>
-          ))}
+      <section className={`delivery-bar ${deliveryOpen ? "open" : "collapsed"}`} aria-label={tx("delivery")}>
+        <div className="delivery-bar-head">
+          <strong>{tx("delivery")}</strong>
+          {selectedMessageIds.size > 0 && (
+            <span className="selection-meta">
+              {selectedMessageIds.size} {tx("selectedLines")}
+              <button type="button" className="quiet-btn" onClick={() => setSelectedMessageIds(new Set())}>
+                {tx("clearSelection")}
+              </button>
+            </span>
+          )}
+          <button
+            type="button"
+            className="quiet-btn delivery-toggle"
+            onClick={toggleDeliveryOpen}
+            aria-expanded={deliveryOpen}
+          >
+            {deliveryOpen ? tx("deliveryHide") : tx("deliveryShow")}
+          </button>
         </div>
-        <div className="tone-row">
-          <span className="delivery-label" title={tx("toneHint")}>
-            {tx("tone")}
-          </span>
-          <div className="tone-chips" role="group" aria-label={tx("tone")}>
-            {tones.map((tone) => (
-              <span key={tone.id} className={`tone-chip-wrap ${toneId === tone.id ? "active" : ""}`}>
+        {deliveryOpen && (
+          <>
+            <div className="profile-row" role="group" aria-label={tx("profiles")}>
+              <span className="delivery-label">{tx("profiles")}</span>
+              {PROJECT_PROFILES.map((profile) => (
                 <button
+                  key={profile.id}
                   type="button"
-                  className={toneId === tone.id ? "active" : ""}
-                  title={tone.description}
-                  onClick={() => void persistTone(tone.id)}
+                  className={activeProfile === profile.id ? "active" : ""}
+                  title={tx(profile.hintKey)}
+                  onClick={() => applyProjectProfile(profile.id)}
                 >
-                  {tone.label}
+                  {tx(profile.labelKey)}
                 </button>
-                <button
-                  type="button"
-                  className="tone-sample-btn"
-                  title={tx("playToneSample")}
-                  aria-label={`${tx("playToneSample")}: ${tone.label}`}
-                  disabled={busy}
-                  onClick={() => void playToneSample(tone.id)}
-                >
-                  ▶
-                </button>
+              ))}
+            </div>
+            <div className="tone-row">
+              <span className="delivery-label" title={tx("toneHint")}>
+                {tx("tone")}
               </span>
-            ))}
-          </div>
-        </div>
-        <label className="pause-inline synth-lang-field" title={tx("synthLangHint")}>
-          {tx("synthLang")}
-          <select value={synthLang} onChange={(e) => void persistSynthLang(e.target.value)}>
-            {languages.map((lang) => (
-              <option key={lang.id} value={lang.id}>
-                {lang.label}
-                {lang.status === "experimental" ? ` (${tx("experimental")})` : ""}
-              </option>
-            ))}
-          </select>
-        </label>
-        {(() => {
-          const warn = deliveryConflict();
-          return warn ? (
-            <p className="delivery-warn" role="status">
-              {warn}
-            </p>
-          ) : null;
-        })()}
+              <div className="tone-chips" role="group" aria-label={tx("tone")}>
+                {tones.map((tone) => (
+                  <span key={tone.id} className={`tone-chip-wrap ${toneId === tone.id ? "active" : ""}`}>
+                    <button
+                      type="button"
+                      className={toneId === tone.id ? "active" : ""}
+                      title={
+                        selectedMessageIds.size
+                          ? `${tone.description} · ${tx("applyToneSelected")}`
+                          : tone.description
+                      }
+                      onClick={() => void persistTone(tone.id)}
+                    >
+                      {tone.label}
+                    </button>
+                    <button
+                      type="button"
+                      className="tone-sample-btn"
+                      title={tx("playToneSample")}
+                      aria-label={`${tx("playToneSample")}: ${tone.label}`}
+                      disabled={busy}
+                      onClick={() => void playToneSample(tone.id)}
+                    >
+                      ▶
+                    </button>
+                  </span>
+                ))}
+              </div>
+            </div>
+            <label className="pause-inline synth-lang-field" title={tx("synthLangHint")}>
+              {tx("synthLang")}
+              <select value={synthLang} onChange={(e) => void persistSynthLang(e.target.value)}>
+                {languages.map((lang) => (
+                  <option key={lang.id} value={lang.id}>
+                    {lang.label}
+                    {lang.status === "experimental" ? ` (${tx("experimental")})` : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {(() => {
+              const warn = deliveryConflict();
+              return warn ? (
+                <p className="delivery-warn" role="status">
+                  {warn}
+                </p>
+              ) : null;
+            })()}
+          </>
+        )}
       </section>
 
       {appMode === "dialogue" ? (
@@ -1334,7 +1427,11 @@ export default function App() {
       )}
 
       {showHelp && (
-        <p className="hint">{appMode === "lecture" ? tx("helpLecture") : tx("helpDialogue")}</p>
+        <p className="hint">
+          {appMode === "lecture" ? tx("helpLecture") : tx("helpDialogue")}
+          <br />
+          <span className="muted">{tx("shortcutHelp")}</span>
+        </p>
       )}
 
       {error && (
@@ -1423,10 +1520,17 @@ export default function App() {
               const messageTone = message.tone_id || toneId;
               const isDirty = dirtyMessageIds.has(message.id);
               const isRegening = regenIndex === index;
+              const isSelected = selectedMessageIds.has(message.id);
               return (
                 <article
-                  className={`bubble-row ${side} ${active ? "active" : ""} ${isDirty ? "needs-regen" : ""} ${isRegening ? "regen-busy" : ""}`}
+                  className={`bubble-row ${side} ${active ? "active" : ""} ${isDirty ? "needs-regen" : ""} ${isRegening ? "regen-busy" : ""} ${isSelected ? "multi-selected" : ""}`}
                   key={message.id}
+                  onClick={(event) => {
+                    if (event.ctrlKey || event.metaKey) {
+                      event.preventDefault();
+                      toggleMessageSelect(message.id, true);
+                    }
+                  }}
                 >
                   <div className="bubble-stack">
                     <div className="bubble-meta">
@@ -1686,7 +1790,7 @@ export default function App() {
                           ? tx("voices")
                           : tx("dict")}
               </h2>
-              <ActionButton label="Close" onClick={() => setPanel(null)}>
+              <ActionButton label={tx("close")} onClick={() => setPanel(null)}>
                 <Icon name="close" />
               </ActionButton>
             </div>
@@ -1702,15 +1806,27 @@ export default function App() {
                   }
                 />
                 <button type="submit" className="primary" disabled={busy || !importText.trim()}>
-                  Parse into chat
+                  {tx("parseIntoChat")}
                 </button>
               </form>
             )}
 
             {panel === "history" && (
               <div className="drawer-body history-list">
-                {!history.length && <p className="muted">No exports yet.</p>}
-                {history.map((item) => (
+                <label className="panel-search">
+                  <span className="sr-only">{tx("search")}</span>
+                  <input
+                    value={historyQuery}
+                    onChange={(e) => setHistoryQuery(e.target.value)}
+                    placeholder={tx("searchHistory")}
+                    aria-label={tx("searchHistory")}
+                  />
+                </label>
+                {!history.length && <p className="muted">{tx("noExports")}</p>}
+                {history.length > 0 && !filteredHistory.length && (
+                  <p className="muted">{tx("noSearchResults")}</p>
+                )}
+                {filteredHistory.map((item) => (
                   <div className="history-item" key={item.id}>
                     <div>
                       <strong>{item.topic}</strong>
@@ -1739,16 +1855,18 @@ export default function App() {
                           setPanel(null);
                         }}
                       >
-                        Open
+                        {tx("open")}
                       </button>
                       <button
                         type="button"
                         className="danger"
                         onClick={() => {
-                          if (window.confirm(`Delete export “${item.topic}”?`)) void deleteHistoryItem(item);
+                          if (window.confirm(tx("confirmDeleteExport", { name: item.topic }))) {
+                            void deleteHistoryItem(item);
+                          }
                         }}
                       >
-                        Delete
+                        {tx("delete")}
                       </button>
                     </div>
                   </div>
@@ -1762,6 +1880,7 @@ export default function App() {
                 onSelectedModelId={setSelectedModelId}
                 onError={setError}
                 onStatus={setStatus}
+                t={tx}
               />
             )}
 
@@ -1771,6 +1890,7 @@ export default function App() {
                 onOpen={openProject}
                 onError={setError}
                 onStatus={setStatus}
+                t={tx}
               />
             )}
 
@@ -1791,6 +1911,7 @@ export default function App() {
                   onVoicesRefresh={() => void refreshVoices().catch((e) => setError(e.message))}
                   onError={setError}
                   onStatus={setStatus}
+                  t={tx}
                   allowedGenders={
                     voiceTarget === "narrator" || !strictCast
                       ? undefined
@@ -1801,7 +1922,7 @@ export default function App() {
             )}
 
             {panel === "pronounce" && (
-              <PronunciationPanel onError={setError} onStatus={setStatus} />
+              <PronunciationPanel onError={setError} onStatus={setStatus} t={tx} />
             )}
           </aside>
         </div>

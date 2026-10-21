@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { api } from "../api";
+import type { TranslateFn } from "../i18n";
 import type { Voice } from "../types";
 import { VoiceAvatar } from "./VoiceAvatar";
 
@@ -16,6 +17,7 @@ type Props = {
   onStatus: (message: string) => void;
   allowedGenders?: Array<"Female" | "Male">;
   compact?: boolean;
+  t: TranslateFn;
 };
 
 export function VoicePicker({
@@ -31,6 +33,7 @@ export function VoicePicker({
   onStatus,
   allowedGenders,
   compact,
+  t,
 }: Props) {
   const [gender, setGender] = useState<"All" | "Female" | "Male">("All");
   const [accent, setAccent] = useState<string>("All");
@@ -61,7 +64,7 @@ export function VoicePicker({
 
   function playSample(voice: Voice) {
     if (!voice.sample_url) {
-      onError(`No pre-baked sample for ${voice.name}. Generate samples first.`);
+      onError(t("noSample", { name: voice.name }));
       return;
     }
     new Audio(api.base + voice.sample_url).play().catch((e) => onError(e.message));
@@ -85,10 +88,10 @@ export function VoicePicker({
   async function generateMissing() {
     try {
       setBusy(true);
-      onStatus("Generating missing voice samples (one-time)…");
+      onStatus(t("generatingSamples"));
       const result = await api.ensureAllVoiceSamples(false);
       const ok = result.results.filter((row) => row.ready).length;
-      onStatus(`Voice samples ready: ${ok}/${result.count}`);
+      onStatus(t("samplesReady", { ok, count: result.count }));
       onVoicesRefresh();
     } catch (e) {
       onError((e as Error).message);
@@ -101,7 +104,7 @@ export function VoicePicker({
     try {
       setBusy(true);
       await api.buildVoiceSample(voiceId, true);
-      onStatus(`Sample saved for ${voiceId}`);
+      onStatus(t("sampleSaved", { id: voiceId }));
       onVoicesRefresh();
     } catch (e) {
       onError((e as Error).message);
@@ -110,43 +113,47 @@ export function VoicePicker({
     }
   }
 
+  function labelAll(value: string) {
+    return value === "All" ? t("filterAll") : value;
+  }
+
   return (
     <div className={`voice-picker ${compact ? "compact" : ""}`}>
       <div className="voice-filters">
         <label>
-          Gender
+          {t("filterGender")}
           <select value={gender} onChange={(e) => setGender(e.target.value as typeof gender)}>
-            <option value="All">All</option>
+            <option value="All">{t("filterAll")}</option>
             <option value="Female">Female</option>
             <option value="Male">Male</option>
           </select>
         </label>
         <label>
-          Accent
+          {t("filterAccent")}
           <select value={accent} onChange={(e) => setAccent(e.target.value)}>
             {accents.map((item) => (
               <option key={item} value={item}>
-                {item}
+                {labelAll(item)}
               </option>
             ))}
           </select>
         </label>
         <label>
-          Language
+          {t("filterLanguage")}
           <select value={language} onChange={(e) => setLanguage(e.target.value)}>
             {languages.map((item) => (
               <option key={item} value={item}>
-                {item}
+                {labelAll(item)}
               </option>
             ))}
           </select>
         </label>
         <label className="check-inline">
           <input type="checkbox" checked={onlyFavorites} onChange={(e) => setOnlyFavorites(e.target.checked)} />
-          Favorites
+          {t("favoritesOnly")}
         </label>
         <button type="button" disabled={busy} onClick={() => void generateMissing()}>
-          Bake missing samples
+          {t("bakeMissing")}
         </button>
       </div>
 
@@ -165,25 +172,40 @@ export function VoicePicker({
                     {voice.gender} · {voice.accent} · {voice.language}
                   </div>
                   <code>{voice.id}</code>
-                  {voice.id === defaultVoiceId && <span className="badge">Default</span>}
+                  {voice.id === defaultVoiceId && <span className="badge">{t("badgeDefault")}</span>}
                 </div>
               </button>
               <div className="voice-card-actions">
-                <button type="button" title="Play sample" disabled={!voice.sample_url} onClick={() => playSample(voice)}>
+                <button
+                  type="button"
+                  title={t("playSample")}
+                  disabled={!voice.sample_url}
+                  onClick={() => playSample(voice)}
+                >
                   ▶
                 </button>
                 {!voice.sample_url && (
                   <button type="button" disabled={busy} onClick={() => void generateOne(voice.id)}>
-                    Bake
+                    {t("bake")}
                   </button>
                 )}
-                <button type="button" title="Favorite" className={fav ? "active" : ""} onClick={() => toggleFavorite(voice.id)}>
+                <button
+                  type="button"
+                  title={t("favorite")}
+                  className={fav ? "active" : ""}
+                  onClick={() => toggleFavorite(voice.id)}
+                >
                   ★
                 </button>
-                <button type="button" title="Compare" className={inCompare ? "active" : ""} onClick={() => toggleCompare(voice.id)}>
+                <button
+                  type="button"
+                  title={t("compare")}
+                  className={inCompare ? "active" : ""}
+                  onClick={() => toggleCompare(voice.id)}
+                >
                   ⇄
                 </button>
-                <button type="button" title="Set as default" onClick={() => onDefaultVoiceChange(voice.id)}>
+                <button type="button" title={t("setDefault")} onClick={() => onDefaultVoiceChange(voice.id)}>
                   ⌂
                 </button>
               </div>
@@ -194,7 +216,9 @@ export function VoicePicker({
 
       {compare.length >= 2 && (
         <div className="voice-compare">
-          <strong>Compare ({compare.length}/3)</strong>
+          <strong>
+            {t("compareTitle")} ({compare.length}/3)
+          </strong>
           <div className="voice-compare-row">
             {compare.map((id) => {
               const voice = voices.find((item) => item.id === id);
@@ -204,14 +228,14 @@ export function VoicePicker({
                   <VoiceAvatar gender={voice.gender} />
                   <span>{voice.name}</span>
                   <button type="button" disabled={!voice.sample_url} onClick={() => playSample(voice)}>
-                    ▶ sample
+                    ▶ {t("sampleLabel")}
                   </button>
                 </div>
               );
             })}
           </div>
           <button type="button" onClick={() => setCompare([])}>
-            Clear compare
+            {t("clearCompare")}
           </button>
         </div>
       )}

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
+import type { TranslateFn } from "../i18n";
 import type { BenchmarkResult, DownloadJob, ModelInfo, OfflineStatus } from "../types";
 
 type Props = {
@@ -7,9 +8,10 @@ type Props = {
   onSelectedModelId: (id: string) => void;
   onError: (message: string) => void;
   onStatus: (message: string) => void;
+  t: TranslateFn;
 };
 
-export function ModelPanel({ selectedModelId, onSelectedModelId, onError, onStatus }: Props) {
+export function ModelPanel({ selectedModelId, onSelectedModelId, onError, onStatus, t }: Props) {
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [offline, setOffline] = useState<OfflineStatus | null>(null);
   const [download, setDownload] = useState<DownloadJob | null>(null);
@@ -38,10 +40,10 @@ export function ModelPanel({ selectedModelId, onSelectedModelId, onError, onStat
         .then((job) => {
           setDownload(job);
           if (job.status === "done") {
-            onStatus("Download complete");
+            onStatus(t("downloadComplete"));
             refresh().catch((e) => onError(e.message));
           }
-          if (job.status === "error") onError(job.error || "Download failed");
+          if (job.status === "error") onError(job.error || t("downloadFailed"));
         })
         .catch((e) => onError(e.message));
     }, 500);
@@ -53,7 +55,7 @@ export function ModelPanel({ selectedModelId, onSelectedModelId, onError, onStat
       setBusy(true);
       await api.selectModel(modelId);
       onSelectedModelId(modelId);
-      onStatus(`Selected ${modelId} (not loaded until generate)`);
+      onStatus(t("selectedModelStatus", { id: modelId }));
       await refresh();
     } catch (e) {
       onError((e as Error).message);
@@ -67,7 +69,7 @@ export function ModelPanel({ selectedModelId, onSelectedModelId, onError, onStat
       setBusy(true);
       const job = await api.downloadModel(modelId);
       setDownload(job);
-      onStatus(`Downloading ${modelId}…`);
+      onStatus(t("downloadingModel", { id: modelId }));
     } catch (e) {
       onError((e as Error).message);
     } finally {
@@ -80,7 +82,7 @@ export function ModelPanel({ selectedModelId, onSelectedModelId, onError, onStat
       setBusy(true);
       const job = await api.downloadVoices();
       setDownload(job);
-      onStatus("Downloading voice pack…");
+      onStatus(t("downloadingVoices"));
     } catch (e) {
       onError((e as Error).message);
     } finally {
@@ -94,7 +96,7 @@ export function ModelPanel({ selectedModelId, onSelectedModelId, onError, onStat
       await api.selectModel(modelId);
       await api.loadModel(modelId);
       onSelectedModelId(modelId);
-      onStatus(`Loaded ${modelId}`);
+      onStatus(t("loadedModel", { id: modelId }));
       await refresh();
     } catch (e) {
       onError((e as Error).message);
@@ -104,11 +106,11 @@ export function ModelPanel({ selectedModelId, onSelectedModelId, onError, onStat
   }
 
   async function remove(modelId: string) {
-    if (!window.confirm(`Delete downloaded files for ${modelId}? This cannot be undone.`)) return;
+    if (!window.confirm(t("confirmDeleteModel", { id: modelId }))) return;
     try {
       setBusy(true);
       await api.deleteModel(modelId);
-      onStatus(`Deleted ${modelId}`);
+      onStatus(t("deletedModel", { id: modelId }));
       await refresh();
     } catch (e) {
       onError((e as Error).message);
@@ -120,13 +122,13 @@ export function ModelPanel({ selectedModelId, onSelectedModelId, onError, onStat
   async function runBenchmark() {
     try {
       setBusy(true);
-      onStatus("Running benchmark on installed models…");
+      onStatus(t("runningBenchmark"));
       const result = await api.runBenchmark({
         include_listening_samples: true,
         voice_id: "af_heart",
       });
       setBenchmark(result);
-      onStatus("Benchmark finished");
+      onStatus(t("benchmarkFinished"));
     } catch (e) {
       onError((e as Error).message);
     } finally {
@@ -138,23 +140,21 @@ export function ModelPanel({ selectedModelId, onSelectedModelId, onError, onStat
     <div className="drawer-body model-panel">
       {offline && (
         <p className={`offline-banner ${offline.offline_ready ? "ok" : "warn"}`}>
-          {offline.offline_ready
-            ? "Offline-ready for the selected model."
-            : "Selected model or voices are not fully installed yet."}
+          {offline.offline_ready ? t("offlineReady") : t("offlineNotReady")}
         </p>
       )}
       {!offline?.voices_installed && (
         <button type="button" disabled={busy} onClick={() => void downloadVoices()}>
-          Download ONNX voice pack (~25 MB)
+          {t("downloadVoicePack")}
         </button>
       )}
       {download && download.status === "running" && (
         <div className="download-progress">
           <div>
-            Downloading {download.target}: {download.progress.toFixed(0)}%
+            {t("downloading")} {download.target}: {download.progress.toFixed(0)}%
           </div>
           <button type="button" className="danger" onClick={() => void api.cancelDownload(download.id)}>
-            Cancel download
+            {t("cancelDownload")}
           </button>
         </div>
       )}
@@ -163,35 +163,35 @@ export function ModelPanel({ selectedModelId, onSelectedModelId, onError, onStat
           <article key={model.id} className={`model-card ${model.selected ? "selected" : ""}`}>
             <header>
               <strong>{model.id}</strong>
-              {model.recommended && <span className="badge">Recommended</span>}
-              {model.loaded && <span className="badge">Loaded</span>}
+              {model.recommended && <span className="badge">{t("recommended")}</span>}
+              {model.loaded && <span className="badge">{t("loaded")}</span>}
             </header>
             <p className="muted">
               {model.precision} · {model.approx_size_label || "n/a"} · {model.runtime}
             </p>
             <p>{model.description}</p>
             <p className="muted">
-              {model.installed ? "Installed" : "Not installed"}
-              {model.runtime === "onnx" && !model.voices_installed ? " · voices missing" : ""}
+              {model.installed ? t("installed") : t("notInstalled")}
+              {model.runtime === "onnx" && !model.voices_installed ? ` · ${t("voicesMissing")}` : ""}
               {model.integrity && model.runtime === "onnx" ? ` · ${model.integrity}` : ""}
             </p>
             <div className="model-actions">
               <button type="button" disabled={busy || model.selected} onClick={() => void select(model.id)}>
-                Select
+                {t("select")}
               </button>
               {model.runtime === "onnx" && !model.installed && (
                 <button type="button" disabled={busy} onClick={() => void downloadModel(model.id)}>
-                  Download
+                  {t("download")}
                 </button>
               )}
               {model.installed && (
                 <button type="button" disabled={busy} onClick={() => void load(model.id)}>
-                  Load
+                  {t("load")}
                 </button>
               )}
               {model.runtime === "onnx" && model.installed && (
                 <button type="button" className="danger" disabled={busy} onClick={() => void remove(model.id)}>
-                  Delete
+                  {t("delete")}
                 </button>
               )}
             </div>
@@ -200,9 +200,9 @@ export function ModelPanel({ selectedModelId, onSelectedModelId, onError, onStat
       </div>
       <div className="benchmark-block">
         <button type="button" disabled={busy} onClick={() => void runBenchmark()}>
-          Benchmark installed models
+          {t("runBenchmark")}
         </button>
-        <p className="muted">Uses the same sample text on your machine. No fabricated numbers.</p>
+        <p className="muted">{t("benchmarkHint")}</p>
         {benchmark && (
           <div className="benchmark-results">
             {benchmark.results.map((row) => (
@@ -212,12 +212,12 @@ export function ModelPanel({ selectedModelId, onSelectedModelId, onError, onStat
                   <span className="error-text">{row.error}</span>
                 ) : (
                   <span className="muted">
-                    load {row.load_seconds?.toFixed(2)}s · first {row.first_generation_seconds?.toFixed(2)}s ·
-                    warm {row.warm_generation_seconds?.toFixed(2)}s · RTF {row.realtime_factor?.toFixed(2) ?? "n/a"}
+                    load {row.load_seconds?.toFixed(2)}s · first {row.first_generation_seconds?.toFixed(2)}s · warm{" "}
+                    {row.warm_generation_seconds?.toFixed(2)}s · RTF {row.realtime_factor?.toFixed(2) ?? "n/a"}
                     {row.sample_url ? (
                       <>
                         {" "}
-                        · <a href={api.base + row.sample_url}>listen</a>
+                        · <a href={api.base + row.sample_url}>{t("listen")}</a>
                       </>
                     ) : null}
                   </span>
@@ -227,7 +227,9 @@ export function ModelPanel({ selectedModelId, onSelectedModelId, onError, onStat
           </div>
         )}
       </div>
-      <p className="muted">Selected: {selectedModelId}. Changing selection does not download or generate audio.</p>
+      <p className="muted">
+        {t("selectedPrefix")}: {selectedModelId}. {t("selectedModelHint")}
+      </p>
     </div>
   );
 }

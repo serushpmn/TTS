@@ -1,12 +1,14 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { api } from "../api";
+import type { TranslateFn } from "../i18n";
 
 type Props = {
   onError: (message: string) => void;
   onStatus: (message: string) => void;
+  t: TranslateFn;
 };
 
-export function PronunciationPanel({ onError, onStatus }: Props) {
+export function PronunciationPanel({ onError, onStatus, t }: Props) {
   const [entries, setEntries] = useState<Record<string, string>>({});
   const [word, setWord] = useState("");
   const [pronunciation, setPronunciation] = useState("");
@@ -28,7 +30,7 @@ export function PronunciationPanel({ onError, onStatus }: Props) {
       setEntries(next);
       setWord("");
       setPronunciation("");
-      onStatus("Pronunciation saved");
+      onStatus(t("pronunciationSaved"));
     } catch (e) {
       onError((e as Error).message);
     } finally {
@@ -51,23 +53,21 @@ export function PronunciationPanel({ onError, onStatus }: Props) {
 
   return (
     <div className="drawer-body pronunciation-panel">
-      <p className="muted">
-        Whole-word replacements applied before synthesis (names, acronyms, hard words). Example: API → A P I.
-      </p>
+      <p className="muted">{t("dictHint")}</p>
       <form className="pronunciation-form" onSubmit={addEntry}>
-        <input value={word} onChange={(e) => setWord(e.target.value)} placeholder="Word / name" required />
+        <input value={word} onChange={(e) => setWord(e.target.value)} placeholder={t("wordPlaceholder")} required />
         <input
           value={pronunciation}
           onChange={(e) => setPronunciation(e.target.value)}
-          placeholder="How it should be spoken"
+          placeholder={t("spokenPlaceholder")}
           required
         />
         <button type="submit" className="primary" disabled={busy}>
-          Add / update
+          {t("addUpdate")}
         </button>
       </form>
       <div className="pronunciation-list">
-        {!rows.length && <p className="muted">Dictionary is empty.</p>}
+        {!rows.length && <p className="muted">{t("dictEmpty")}</p>}
         {rows.map(([key, value]) => (
           <div className="history-item" key={key}>
             <div>
@@ -75,7 +75,7 @@ export function PronunciationPanel({ onError, onStatus }: Props) {
               <div className="muted">{value}</div>
             </div>
             <button type="button" className="danger" disabled={busy} onClick={() => void remove(key)}>
-              Delete
+              {t("delete")}
             </button>
           </div>
         ))}

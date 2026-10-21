@@ -1135,6 +1135,49 @@ html[data-mode="night"] .offline-banner.ok { background: #1e3320; }
   border-bottom: 1px solid var(--line);
   background: var(--panel);
 }
+.delivery-bar.collapsed {
+  padding-block: 6px 8px;
+}
+.delivery-bar-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  align-items: center;
+  width: 100%;
+}
+.delivery-bar-head strong {
+  font-size: 13px;
+}
+.delivery-toggle {
+  margin-inline-start: auto;
+}
+.selection-meta {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 12px;
+  color: var(--muted);
+}
+.bubble-row.multi-selected .bubble {
+  outline: 2px solid color-mix(in srgb, var(--ink) 45%, transparent);
+}
+.panel-search {
+  display: block;
+  margin-bottom: 10px;
+}
+.panel-search input {
+  width: 100%;
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  border: 0;
+}
 .tone-row {
   display: flex;
   flex-wrap: wrap;

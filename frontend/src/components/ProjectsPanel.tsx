@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api } from "../api";
+import type { TranslateFn } from "../i18n";
 import type { Project } from "../types";
 
 type Props = {
@@ -7,11 +8,13 @@ type Props = {
   onError: (message: string) => void;
   onStatus: (message: string) => void;
   current: Project;
+  t: TranslateFn;
 };
 
-export function ProjectsPanel({ onOpen, onError, onStatus, current }: Props) {
+export function ProjectsPanel({ onOpen, onError, onStatus, current, t }: Props) {
   const [projects, setProjects] = useState<Project[]>([]);
   const [busy, setBusy] = useState(false);
+  const [query, setQuery] = useState("");
 
   async function refresh() {
     setProjects(await api.listProjects());
@@ -21,6 +24,15 @@ export function ProjectsPanel({ onOpen, onError, onStatus, current }: Props) {
     refresh().catch((e) => onError(e.message));
   }, []);
 
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return projects;
+    return projects.filter((project) => {
+      const hay = `${project.name} ${project.topic} ${project.mode || ""}`.toLowerCase();
+      return hay.includes(q);
+    });
+  }, [projects, query]);
+
   async function saveCurrent() {
     try {
       setBusy(true);
@@ -29,7 +41,7 @@ export function ProjectsPanel({ onOpen, onError, onStatus, current }: Props) {
         id: current.id || crypto.randomUUID(),
         name: current.name || current.topic || "Untitled",
       });
-      onStatus(`Saved project “${saved.name}”`);
+      onStatus(t("projectSaved", { name: saved.name }));
       await refresh();
     } catch (e) {
       onError((e as Error).message);
@@ -39,7 +51,7 @@ export function ProjectsPanel({ onOpen, onError, onStatus, current }: Props) {
   }
 
   async function rename(project: Project) {
-    const name = window.prompt("Rename project", project.name);
+    const name = window.prompt(t("renamePrompt"), project.name);
     if (!name?.trim()) return;
     try {
       setBusy(true);
@@ -56,7 +68,7 @@ export function ProjectsPanel({ onOpen, onError, onStatus, current }: Props) {
     try {
       setBusy(true);
       await api.duplicateProject(project.id);
-      onStatus("Project duplicated");
+      onStatus(t("projectDuplicated"));
       await refresh();
     } catch (e) {
       onError((e as Error).message);
@@ -66,7 +78,7 @@ export function ProjectsPanel({ onOpen, onError, onStatus, current }: Props) {
   }
 
   async function remove(project: Project) {
-    if (!window.confirm(`Delete project “${project.name}”? Audio files are not deleted.`)) return;
+    if (!window.confirm(t("confirmDeleteProject", { name: project.name }))) return;
     try {
       setBusy(true);
       await api.deleteProject(project.id);
@@ -81,10 +93,20 @@ export function ProjectsPanel({ onOpen, onError, onStatus, current }: Props) {
   return (
     <div className="drawer-body project-panel">
       <button type="button" disabled={busy} onClick={() => void saveCurrent()}>
-        Save current workspace
+        {t("saveWorkspace")}
       </button>
-      {!projects.length && <p className="muted">No saved projects yet.</p>}
-      {projects.map((project) => (
+      <label className="panel-search">
+        <span className="sr-only">{t("search")}</span>
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder={t("searchProjects")}
+          aria-label={t("searchProjects")}
+        />
+      </label>
+      {!projects.length && <p className="muted">{t("noProjects")}</p>}
+      {projects.length > 0 && !filtered.length && <p className="muted">{t("noSearchResults")}</p>}
+      {filtered.map((project) => (
         <div className="history-item" key={project.id}>
           <div>
             <strong>{project.name}</strong>
@@ -95,16 +117,16 @@ export function ProjectsPanel({ onOpen, onError, onStatus, current }: Props) {
           </div>
           <div className="history-actions">
             <button type="button" onClick={() => onOpen(project)}>
-              Open
+              {t("open")}
             </button>
             <button type="button" onClick={() => void rename(project)}>
-              Rename
+              {t("rename")}
             </button>
             <button type="button" onClick={() => void duplicate(project)}>
-              Duplicate
+              {t("duplicateProject")}
             </button>
             <button type="button" className="danger" onClick={() => void remove(project)}>
-              Delete
+              {t("delete")}
             </button>
           </div>
         </div>
