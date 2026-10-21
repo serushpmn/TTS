@@ -13,6 +13,7 @@ from app.config import settings
 from app.services.markup import parse_markup
 from app.services.prefs import selected_model_id
 from app.services.pronunciation import apply_pronunciation
+from app.services.tone import apply_tone_to_text, get_tone
 from app.tts.factory import engine_hub
 
 
@@ -43,6 +44,14 @@ def write_silence(seconds: float, destination: Path, sample_rate: int = 24000) -
     return destination
 
 
+def _call_synth(engine, text: str, voice_id: str, speed: float, synth_lang: str | None):
+    try:
+        return engine.synthesize(text, voice_id, speed, synth_lang=synth_lang)
+    except TypeError:
+        # Older engine signature without synth_lang.
+        return engine.synthesize(text, voice_id, speed)
+
+
 def synthesize_turn(
     text: str,
     voice_id: str,
@@ -52,13 +61,19 @@ def synthesize_turn(
     *,
     trim_silence: bool = False,
     apply_dict: bool = True,
+    tone_id: str | None = None,
+    synth_lang: str | None = None,
 ) -> Path:
-    """Synthesize one turn, expanding [pause]/[laugh]/[slow]/etc. tags."""
+    """Synthesize one turn, expanding tone/pause/laugh/slow tags."""
     active_engine = engine or engine_hub.get(model_id or selected_model_id())
-    prepared = apply_pronunciation(text) if apply_dict else text
+    tone = get_tone(tone_id)
+    base_speed = max(0.5, min(2.0, speed * tone.speed_rate))
+    prepared = apply_tone_to_text(text, tone_id)
+    if apply_dict:
+        prepared = apply_pronunciation(prepared)
     parts = parse_markup(prepared)
     if len(parts) == 1 and parts[0].kind == "speech":
-        path = active_engine.synthesize(parts[0].value, voice_id, speed)
+        path = _call_synth(active_engine, parts[0].value, voice_id, base_speed, synth_lang)
         if trim_silence:
             trimmed = settings.temp_dir / f"trim-{path.stem}.wav"
             if not trimmed.exists():
@@ -67,10 +82,10 @@ def synthesize_turn(
         return path
 
     segments: list[tuple[Path, float]] = []
-    active_speed = max(0.5, min(2.0, speed))
+    active_speed = base_speed
     for index, part in enumerate(parts):
         if part.kind == "speed":
-            active_speed = max(0.5, min(2.0, speed * part.rate))
+            active_speed = max(0.5, min(2.0, base_speed * part.rate))
             continue
         if part.kind == "pause":
             silence = settings.temp_dir / f"silence-{part.seconds:.2f}.wav"
@@ -79,15 +94,15 @@ def synthesize_turn(
             segments.append((silence, 0.0))
             continue
         spoken = part.value
-        audio = active_engine.synthesize(spoken, voice_id, active_speed)
+        audio = _call_synth(active_engine, spoken, voice_id, active_speed, synth_lang)
         trailing = 0.12 if index < len(parts) - 1 else 0.0
         segments.append((audio, trailing))
 
     if not segments:
-        return active_engine.synthesize(" ", voice_id, speed)
+        return _call_synth(active_engine, " ", voice_id, base_speed, synth_lang)
 
     model_key = getattr(active_engine, "model_id", model_id or "unknown")
-    digest_source = f"{model_key}|{prepared}|{voice_id}|{speed}|trim={trim_silence}"
+    digest_source = f"{model_key}|{synth_lang}|{tone_id}|{prepared}|{voice_id}|{base_speed}|trim={trim_silence}"
     digest = hashlib.sha256(digest_source.encode()).hexdigest()
     combined = settings.temp_dir / f"turn-{digest}.wav"
     if not combined.exists():

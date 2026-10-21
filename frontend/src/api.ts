@@ -9,6 +9,8 @@ import type {
   ModelInfo,
   OfflineStatus,
   Project,
+  SynthLanguage,
+  ToneStyle,
   Voice,
 } from "./types";
 
@@ -57,6 +59,8 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ text, voice_id, speed, model_id }),
     }),
+  tones: () => request<ToneStyle[]>("/api/tones"),
+  languages: () => request<SynthLanguage[]>("/api/languages"),
   startGenerate: (project: Project & { model_id?: string | null }) =>
     request<GenerateJob>("/api/generate", {
       method: "POST",
@@ -66,6 +70,8 @@ export const api = {
         speaker_change_pause: project.speaker_change_pause,
         same_speaker_pause: project.same_speaker_pause ?? 0.35,
         trim_silence: project.trim_silence ?? false,
+        tone_id: project.tone_id ?? null,
+        synth_lang: project.synth_lang ?? "auto",
         topic: project.topic || project.name,
         model_id: project.model_id,
       }),

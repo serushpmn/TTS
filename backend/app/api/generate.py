@@ -138,7 +138,21 @@ def regenerate_segment(request: SegmentRegenRequest) -> dict:
                 text = request.text if index == request.index else message.text
                 voice = request.voice_id if index == request.index else speaker.voice_id
                 speed = request.speed if index == request.index else speaker.speed
-                audio = synthesize_turn(text, voice, speed, engine=engine, model_id=model_id)
+                tone = (
+                    request.tone_id
+                    if index == request.index
+                    else (message.tone_id or request.tone_id)
+                )
+                audio = synthesize_turn(
+                    text,
+                    voice,
+                    speed,
+                    engine=engine,
+                    model_id=model_id,
+                    trim_silence=request.trim_silence,
+                    tone_id=tone,
+                    synth_lang=request.synth_lang,
+                )
                 changing = index < total - 1 and request.messages[index + 1].speaker_id != message.speaker_id
                 pause = (
                     request.speaker_change_pause
@@ -156,7 +170,16 @@ def regenerate_segment(request: SegmentRegenRequest) -> dict:
             for index, chunk in enumerate(chunks):
                 voice = request.voice_id
                 speed = request.speed
-                audio = synthesize_turn(chunk, voice, speed, engine=engine, model_id=model_id)
+                audio = synthesize_turn(
+                    chunk,
+                    voice,
+                    speed,
+                    engine=engine,
+                    model_id=model_id,
+                    trim_silence=request.trim_silence,
+                    tone_id=request.tone_id,
+                    synth_lang=request.synth_lang,
+                )
                 pause = request.section_pause if index < len(chunks) - 1 else 0
                 segments.append((audio, pause))
 

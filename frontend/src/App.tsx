@@ -9,9 +9,21 @@ import { PronunciationPanel } from "./components/PronunciationPanel";
 import { VoicePicker } from "./components/VoicePicker";
 import { clearDraft, formatDuration, loadDraft, saveDraft } from "./draft";
 import { estimateDialogueSeconds } from "./estimate";
+import { isRtl, t, UI_LOCALES, type UiLocale } from "./i18n";
 import { matchPausePreset, PAUSE_PRESETS, type PausePresetId } from "./pausePresets";
 import { applyAppearance, loadMode, type ModeId } from "./themes";
-import type { AppMode, GenerateJob, HistoryItem, LecturePlan, Message, Project, Speaker, Voice } from "./types";
+import type {
+  AppMode,
+  GenerateJob,
+  HistoryItem,
+  LecturePlan,
+  Message,
+  Project,
+  Speaker,
+  SynthLanguage,
+  ToneStyle,
+  Voice,
+} from "./types";
 import {
   allowedGendersFor,
   genderOf,
@@ -22,13 +34,16 @@ import {
 } from "./voices";
 
 const id = () => crypto.randomUUID();
-const SSML_ACTIONS: { label: string; tag: string; title: string }[] = [
-  { label: "مکث کوتاه", tag: "[pause:0.4s]", title: "Short pause" },
-  { label: "مکث", tag: "[pause]", title: "Normal pause" },
-  { label: "مکث بلند", tag: "[pause:1.5s]", title: "Long pause" },
-  { label: "خنده", tag: "[laugh]", title: "Insert laugh (spoken approximation)" },
-  { label: "آهسته", tag: "[slow]", title: "Speak slower from here" },
-];
+
+function ssmlActions(locale: UiLocale): { label: string; tag: string; title: string }[] {
+  return [
+    { label: t(locale, "tagShortPause"), tag: "[pause:0.4s]", title: t(locale, "tagShortPause") },
+    { label: t(locale, "tagPause"), tag: "[pause]", title: t(locale, "tagPause") },
+    { label: t(locale, "tagLongPause"), tag: "[pause:1.5s]", title: t(locale, "tagLongPause") },
+    { label: t(locale, "tagLaugh"), tag: "[laugh]", title: t(locale, "tagLaugh") },
+    { label: t(locale, "tagSlow"), tag: "[slow]", title: t(locale, "tagSlow") },
+  ];
+}
 
 function createSpeakers(): Speaker[] {
   return [
@@ -49,7 +64,13 @@ function sanitizeMessages(items: Message[]): Message[] {
     id: item.id,
     speaker_id: item.speaker_id,
     text: item.text,
+    tone_id: item.tone_id || null,
   }));
+}
+
+function normalizeLocale(value: string | null | undefined): UiLocale {
+  if (value === "fa" || value === "de" || value === "en") return value;
+  return "en";
 }
 
 function slugify(value: string) {
@@ -182,8 +203,15 @@ export default function App() {
   const [favoriteVoices, setFavoriteVoices] = useState<string[]>([]);
   const [defaultVoiceId, setDefaultVoiceId] = useState("af_heart");
   const [voiceTarget, setVoiceTarget] = useState<"narrator" | string>("narrator");
+  const [tones, setTones] = useState<ToneStyle[]>([]);
+  const [languages, setLanguages] = useState<SynthLanguage[]>([]);
+  const [uiLocale, setUiLocale] = useState<UiLocale>("en");
+  const [toneId, setToneId] = useState("neutral");
+  const [synthLang, setSynthLang] = useState("auto");
   const jobIdRef = useRef<string | null>(null);
   const pausePreset = matchPausePreset(pause, sameSpeakerPause);
+  const tx = (key: string) => t(uiLocale, key);
+  const tagActions = useMemo(() => ssmlActions(uiLocale), [uiLocale]);
 
   const speakerById = useMemo(() => new Map(speakers.map((s) => [s.id, s])), [speakers]);
   const speakerSide = useMemo(() => {
@@ -195,6 +223,11 @@ export default function App() {
   useEffect(() => {
     applyAppearance("studio", mode);
   }, [mode]);
+
+  useEffect(() => {
+    document.documentElement.lang = uiLocale;
+    document.documentElement.dir = isRtl(uiLocale) ? "rtl" : "ltr";
+  }, [uiLocale]);
 
   function refreshVoices() {
     return api.voices().then((list) => {
@@ -209,6 +242,8 @@ export default function App() {
   useEffect(() => {
     refreshVoices().catch((e) => setError(e.message));
     refreshHistory().catch((e) => setError(e.message));
+    api.tones().then(setTones).catch(() => undefined);
+    api.languages().then(setLanguages).catch(() => undefined);
     api
       .getPrefs()
       .then((prefs) => {
@@ -217,6 +252,9 @@ export default function App() {
         setFavoriteVoices(prefs.favorite_voices || []);
         setDefaultVoiceId(prefs.default_voice_id || "af_heart");
         setTrimSilence(Boolean(prefs.trim_silence_default));
+        setUiLocale(normalizeLocale(prefs.ui_locale));
+        setSynthLang(prefs.synth_lang || "auto");
+        setToneId(prefs.default_tone_id || "neutral");
         if (!restored?.narratorVoice && prefs.default_voice_id) {
           setNarratorVoice(prefs.default_voice_id);
         }
@@ -283,10 +321,15 @@ export default function App() {
     topic: topic || "conversation",
     mode: appMode,
     speakers,
-    messages,
+    messages: messages.map((item) => ({
+      ...item,
+      tone_id: item.tone_id || toneId,
+    })),
     speaker_change_pause: pause,
     same_speaker_pause: sameSpeakerPause,
     trim_silence: trimSilence,
+    tone_id: toneId,
+    synth_lang: synthLang,
     lecture_text: lectureText,
     narrator_voice: narratorVoice,
     narrator_speed: narratorSpeed,
@@ -294,6 +337,33 @@ export default function App() {
     model_id: selectedModelId,
     audio_url: audioUrl,
   });
+
+  async function persistLocale(locale: UiLocale) {
+    setUiLocale(locale);
+    try {
+      await api.savePrefs({ ui_locale: locale });
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  async function persistTone(next: string) {
+    setToneId(next);
+    try {
+      await api.savePrefs({ default_tone_id: next });
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  async function persistSynthLang(next: string) {
+    setSynthLang(next);
+    try {
+      await api.savePrefs({ synth_lang: next });
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
 
   function applyPausePreset(id: PausePresetId) {
     const preset = PAUSE_PRESETS.find((item) => item.id === id);
@@ -316,7 +386,7 @@ export default function App() {
     setDefaultVoiceId(id);
     try {
       await api.savePrefs({ default_voice_id: id });
-      setStatus(`Default voice: ${id}`);
+      setStatus(`${tx("defaultVoice")}: ${id}`);
     } catch (e) {
       setError((e as Error).message);
     }
@@ -338,6 +408,8 @@ export default function App() {
     setPause(project.speaker_change_pause ?? 2.5);
     setSameSpeakerPause(project.same_speaker_pause ?? 0.35);
     setTrimSilence(Boolean(project.trim_silence));
+    setToneId(project.tone_id || toneId);
+    setSynthLang(project.synth_lang || synthLang);
     setLectureText(project.lecture_text || "");
     setNarratorVoice(project.narrator_voice || defaultVoiceId || "af_heart");
     setNarratorSpeed(project.narrator_speed ?? 1);
@@ -393,7 +465,7 @@ export default function App() {
     }
     jobIdRef.current = null;
     if (latest.status === "cancelled") {
-      setStatus("Cancelled");
+      setStatus(tx("cancelled"));
       return;
     }
     if (latest.status === "error") throw new Error(latest.error || "Generation failed");
@@ -401,7 +473,7 @@ export default function App() {
     setAudioName(latest.filename || undefined);
     setMp3Url(latest.mp3_url || undefined);
     setMp3Name(latest.mp3_filename || undefined);
-    setStatus("Ready");
+    setStatus(tx("ready"));
     await refreshHistory();
   }
 
@@ -411,7 +483,7 @@ export default function App() {
     try {
       const cancelled = await api.cancelGenerate(jobId);
       setJob(cancelled);
-      setStatus("Cancelled");
+      setStatus(tx("cancelled"));
     } catch (e) {
       setError((e as Error).message);
     }
@@ -442,11 +514,11 @@ export default function App() {
   function removeSpeaker(speakerId: string) {
     const remaining = speakers.filter((s) => s.id !== speakerId);
     if (!remaining.length) {
-      setError("Keep at least one speaker.");
+      setError(tx("keepOneSpeaker"));
       return;
     }
     if (!hasMixedGenders(remaining, voices)) {
-      setError("Cannot remove that speaker — cast must stay mixed female and male.");
+      setError(tx("cannotRemoveSpeaker"));
       return;
     }
     const fallback = remaining[0].id;
@@ -477,7 +549,7 @@ export default function App() {
     try {
       setError("");
       setBusy(true);
-      setStatus(`Regenerating line ${index + 1}…`);
+      setStatus(`${tx("regenerating")} ${index + 1}…`);
       const result = await api.regenerateSegment({
         mode: "dialogue",
         index,
@@ -485,6 +557,8 @@ export default function App() {
         voice_id: speaker.voice_id,
         speed: speaker.speed,
         model_id: selectedModelId,
+        tone_id: message.tone_id || toneId,
+        synth_lang: synthLang,
         messages,
         speakers,
         speaker_change_pause: pause,
@@ -496,7 +570,7 @@ export default function App() {
       setAudioName(result.filename);
       setMp3Url(result.mp3_url);
       setMp3Name(result.mp3_filename);
-      setStatus("Line regenerated");
+      setStatus(tx("lineRegenerated"));
       await refreshHistory();
     } catch (e) {
       setError((e as Error).message);
@@ -508,12 +582,12 @@ export default function App() {
 
   async function generate() {
     if (!topic.trim()) {
-      setError("Enter a topic for the file name.");
+      setError(tx("enterTopic"));
       return;
     }
     if (appMode === "lecture") {
       if (!lectureText.trim()) {
-        setError("Paste your lecture or presentation script first.");
+        setError(tx("pasteLectureFirst"));
         return;
       }
       try {
@@ -527,6 +601,8 @@ export default function App() {
           speed: narratorSpeed,
           section_pause: sectionPause,
           trim_silence: trimSilence,
+          tone_id: toneId,
+          synth_lang: synthLang,
           model_id: selectedModelId,
         });
         await pollJob(started);
@@ -541,11 +617,11 @@ export default function App() {
 
     const empty = messages.find((message) => !message.text.trim());
     if (empty) {
-      setError("Fill in every dialogue turn before generating.");
+      setError(tx("fillTurns"));
       return;
     }
     if (!hasMixedGenders(speakers, voices)) {
-      setError("Speakers must mix female and male voices.");
+      setError(tx("mixGenders"));
       return;
     }
     try {
@@ -702,12 +778,12 @@ export default function App() {
   }, [busy, generating, panel, showHelp]);
 
   return (
-    <main className="app-shell">
+    <main className={`app-shell locale-${uiLocale}`}>
       <header className="chrome">
         <div className="chrome-top">
           <div className="brand-block">
-            <p className="eyebrow">Local · Private · Kokoro</p>
-            <h1>Dialogue Studio</h1>
+            <p className="eyebrow">{tx("brandEyebrow")}</p>
+            <h1>{tx("brandTitle")}</h1>
           </div>
 
           <div className="mode-switch" role="tablist" aria-label="App mode">
@@ -716,14 +792,14 @@ export default function App() {
               className={appMode === "dialogue" ? "active" : ""}
               onClick={() => setAppMode("dialogue")}
             >
-              Dialogue
+              {tx("modeDialogue")}
             </button>
             <button
               type="button"
               className={appMode === "lecture" ? "active" : ""}
               onClick={() => setAppMode("lecture")}
             >
-              Lecture
+              {tx("modeLecture")}
             </button>
           </div>
 
@@ -740,11 +816,11 @@ export default function App() {
             )}
             {generating ? (
               <button className="danger generate-btn" type="button" onClick={() => void cancelGeneration()}>
-                Cancel
+                {tx("cancel")}
               </button>
             ) : (
               <button className="primary generate-btn" disabled={busy} onClick={generate}>
-                Generate audio
+                {tx("generate")}
               </button>
             )}
           </div>
@@ -752,41 +828,54 @@ export default function App() {
 
         <div className="chrome-tools">
           <label className="topic-field">
-            <span>Topic / file name</span>
+            <span>{tx("topic")}</span>
             <input
               value={topic}
               onChange={(e) => setTopic(e.target.value)}
-              placeholder="e.g. Morning meeting"
-              aria-label="Topic"
+              placeholder={tx("topicPlaceholder")}
+              aria-label={tx("topic")}
             />
           </label>
 
+          <div className="locale-switch" role="group" aria-label={tx("uiLanguage")}>
+            {UI_LOCALES.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                className={uiLocale === item.id ? "active" : ""}
+                onClick={() => void persistLocale(item.id)}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+
           <div className="tool-row">
             <ActionButton
-              label={mode === "day" ? "Night" : "Day"}
+              label={mode === "day" ? tx("night") : tx("day")}
               onClick={() => setMode((value) => (value === "day" ? "night" : "day"))}
             >
               <Icon name={mode === "day" ? "moon" : "sun"} />
             </ActionButton>
-            <ActionButton label="Guide" active={showHelp} onClick={() => setShowHelp((value) => !value)}>
+            <ActionButton label={tx("guide")} active={showHelp} onClick={() => setShowHelp((value) => !value)}>
               <Icon name="help" />
             </ActionButton>
             {appMode === "dialogue" && (
-              <ActionButton label="Import" active={panel === "import"} onClick={() => togglePanel("import")}>
+              <ActionButton label={tx("import")} active={panel === "import"} onClick={() => togglePanel("import")}>
                 <Icon name="import" />
               </ActionButton>
             )}
-            <ActionButton label="History" active={panel === "history"} onClick={() => togglePanel("history")}>
+            <ActionButton label={tx("history")} active={panel === "history"} onClick={() => togglePanel("history")}>
               <Icon name="history" />
             </ActionButton>
-            <ActionButton label="Models" active={panel === "models"} onClick={() => togglePanel("models")}>
+            <ActionButton label={tx("models")} active={panel === "models"} onClick={() => togglePanel("models")}>
               <Icon name="model" />
             </ActionButton>
-            <ActionButton label="Projects" active={panel === "projects"} onClick={() => togglePanel("projects")}>
+            <ActionButton label={tx("projects")} active={panel === "projects"} onClick={() => togglePanel("projects")}>
               <Icon name="project" />
             </ActionButton>
             <ActionButton
-              label="Voices"
+              label={tx("voices")}
               active={panel === "voices"}
               onClick={() => {
                 setVoiceTarget(appMode === "lecture" ? "narrator" : speakers[0]?.id || "narrator");
@@ -795,27 +884,59 @@ export default function App() {
             >
               <Icon name="play" />
             </ActionButton>
-            <ActionButton label="Dict" active={panel === "pronounce"} onClick={() => togglePanel("pronounce")}>
+            <ActionButton label={tx("dict")} active={panel === "pronounce"} onClick={() => togglePanel("pronounce")}>
               <Icon name="help" />
             </ActionButton>
-            <ActionButton label="Reset" onClick={resetAll}>
+            <ActionButton label={tx("reset")} onClick={resetAll}>
               <Icon name="reset" />
             </ActionButton>
           </div>
         </div>
       </header>
 
+      <section className="delivery-bar" aria-label={tx("tone")}>
+        <div className="tone-row">
+          <span className="delivery-label" title={tx("toneHint")}>
+            {tx("tone")}
+          </span>
+          <div className="tone-chips" role="group" aria-label={tx("tone")}>
+            {tones.map((tone) => (
+              <button
+                key={tone.id}
+                type="button"
+                className={toneId === tone.id ? "active" : ""}
+                title={tone.description}
+                onClick={() => void persistTone(tone.id)}
+              >
+                {tone.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <label className="pause-inline synth-lang-field" title={tx("synthLangHint")}>
+          {tx("synthLang")}
+          <select value={synthLang} onChange={(e) => void persistSynthLang(e.target.value)}>
+            {languages.map((lang) => (
+              <option key={lang.id} value={lang.id}>
+                {lang.label}
+                {lang.status === "experimental" ? ` (${tx("experimental")})` : ""}
+              </option>
+            ))}
+          </select>
+        </label>
+      </section>
+
       {appMode === "dialogue" ? (
       <section className={`speaker-bar ${speakersCompact ? "compact" : ""}`}>
         <div className="speaker-bar-head">
-          <span>Speakers</span>
+          <span>{tx("speakers")}</span>
           <div className="speaker-bar-actions">
             {chatBusy && (
               <button type="button" onClick={() => setSpeakersExpanded((value) => !value)}>
-                {speakersCompact ? "Expand" : "Compact"}
+                {speakersCompact ? tx("expand") : tx("compact")}
               </button>
             )}
-            <div className="pause-presets" role="group" aria-label="Pause presets">
+            <div className="pause-presets" role="group" aria-label={tx("pausePresets")}>
               {PAUSE_PRESETS.map((preset) => (
                 <button
                   key={preset.id}
@@ -828,7 +949,7 @@ export default function App() {
               ))}
             </div>
             <label className="pause-inline" title="Pause when speaker changes">
-              Change
+              {tx("changePause")}
               <select value={pause} onChange={(e) => setPause(+e.target.value)}>
                 {[0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4].map((v) => (
                   <option value={v} key={v}>
@@ -838,7 +959,7 @@ export default function App() {
               </select>
             </label>
             <label className="pause-inline" title="Pause between same-speaker lines">
-              Same
+              {tx("samePause")}
               <select value={sameSpeakerPause} onChange={(e) => setSameSpeakerPause(+e.target.value)}>
                 {[0, 0.2, 0.35, 0.5, 0.6, 0.8, 1].map((v) => (
                   <option value={v} key={v}>
@@ -856,12 +977,12 @@ export default function App() {
                   void api.savePrefs({ trim_silence_default: e.target.checked }).catch(() => undefined);
                 }}
               />
-              Trim silence
+              {tx("trimSilence")}
             </label>
             {!speakersCompact && (
               <>
                 <button type="button" disabled={!voices.length || speakers.length < 2} onClick={randomizeAll}>
-                  <Icon name="random" /> Random mix
+                  <Icon name="random" /> {tx("randomMix")}
                 </button>
                 <button
                   type="button"
@@ -873,7 +994,7 @@ export default function App() {
                     ]);
                   }}
                 >
-                  <Icon name="add" /> Add speaker
+                  <Icon name="add" /> {tx("addSpeaker")}
                 </button>
               </>
             )}
@@ -916,7 +1037,7 @@ export default function App() {
                     setPanel("voices");
                   }}
                 >
-                  {voices.find((v) => v.id === speaker.voice_id)?.name || speaker.voice_id} · pick
+                  {voices.find((v) => v.id === speaker.voice_id)?.name || speaker.voice_id} · {tx("pickVoice")}
                 </button>
                 <div className="speaker-card-foot">
                   <span>{genderOf(speaker.voice_id, voices)}</span>
@@ -926,25 +1047,25 @@ export default function App() {
                     max="2"
                     step="0.1"
                     value={speaker.speed}
-                    title="Speed"
-                    aria-label="Speed"
+                    title={tx("speed")}
+                    aria-label={tx("speed")}
                     onChange={(e) =>
                       setSpeakers((all) =>
                         all.map((s) => (s.id === speaker.id ? { ...s, speed: +e.target.value } : s)),
                       )
                     }
                   />
-                  <ActionButton label="Random" onClick={() => randomizeOne(speaker.id)} disabled={!voices.length}>
+                  <ActionButton label={tx("random")} onClick={() => randomizeOne(speaker.id)} disabled={!voices.length}>
                     <Icon name="random" />
                   </ActionButton>
                   <ActionButton
-                    label="Test"
+                    label={tx("test")}
                     disabled={busy}
                     onClick={() => preview("Hello, this is a preview of this voice.", speaker)}
                   >
                     <Icon name="play" />
                   </ActionButton>
-                  <ActionButton label="Remove" variant="danger" onClick={() => removeSpeaker(speaker.id)}>
+                  <ActionButton label={tx("remove")} variant="danger" onClick={() => removeSpeaker(speaker.id)}>
                     <Icon name="close" />
                   </ActionButton>
                 </div>
@@ -957,9 +1078,9 @@ export default function App() {
       ) : (
       <section className="speaker-bar narrator-bar">
         <div className="speaker-bar-head">
-          <span>Narrator</span>
+          <span>{tx("narrator")}</span>
           <div className="speaker-bar-actions">
-            <div className="pause-presets" role="group" aria-label="Pause presets">
+            <div className="pause-presets" role="group" aria-label={tx("pausePresets")}>
               {PAUSE_PRESETS.map((preset) => (
                 <button
                   key={preset.id}
@@ -972,7 +1093,7 @@ export default function App() {
               ))}
             </div>
             <label className="pause-inline" title="Pause between sections">
-              Section pause
+              {tx("sectionPause")}
               <select value={sectionPause} onChange={(e) => setSectionPause(+e.target.value)}>
                 {[0.4, 0.6, 0.85, 1.2, 1.5, 1.6, 2].map((v) => (
                   <option value={v} key={v}>
@@ -990,7 +1111,7 @@ export default function App() {
                   void api.savePrefs({ trim_silence_default: e.target.checked }).catch(() => undefined);
                 }}
               />
-              Trim silence
+              {tx("trimSilence")}
             </label>
           </div>
         </div>
@@ -1003,10 +1124,10 @@ export default function App() {
               setPanel("voices");
             }}
           >
-            {voices.find((v) => v.id === narratorVoice)?.name || narratorVoice} · pick voice
+            {voices.find((v) => v.id === narratorVoice)?.name || narratorVoice} · {tx("pickNarrator")}
           </button>
           <label className="pause-inline">
-            Speed
+            {tx("speed")}
             <input
               type="number"
               min="0.5"
@@ -1017,7 +1138,7 @@ export default function App() {
             />
           </label>
           <ActionButton
-            label="Test voice"
+            label={tx("testVoice")}
             disabled={busy || !voices.length}
             onClick={() =>
               preview("Welcome to this lecture. Today we will cover the main ideas clearly.", {
@@ -1043,21 +1164,7 @@ export default function App() {
       )}
 
       {showHelp && (
-        <p className="hint">
-          {appMode === "lecture" ? (
-            <>
-              Paste a long script. Blank lines become sections. Tags: [pause], [pause:1.5s], [slow], [fast],
-              [laugh]/[sigh] (spoken approximations, not recorded sound effects). Open Models to pick ONNX or
-              PyTorch. Shortcuts: Ctrl+Enter generate, Esc cancel.
-            </>
-          ) : (
-            <>
-              Choose a chat theme once for the whole conversation. Tags: [pause], [pause:1.5s], [slow], [fast],
-              [laugh]/[sigh] (spoken approximations). Use Models for ONNX variants; Projects to save/reopen.
-              Ctrl+Enter generate, Esc cancel. ↻ regenerates one line.
-            </>
-          )}
-        </p>
+        <p className="hint">{appMode === "lecture" ? tx("helpLecture") : tx("helpDialogue")}</p>
       )}
 
       {error && (
@@ -1081,7 +1188,7 @@ export default function App() {
             <div className="progress-fill" style={{ width: `${Math.max(job.percent, 4)}%` }} />
           </div>
           <button type="button" className="cancel-inline" onClick={() => void cancelGeneration()}>
-            <Icon name="stop" /> Stop generation
+            <Icon name="stop" /> {tx("stopGeneration")}
           </button>
         </section>
       )}
@@ -1091,7 +1198,7 @@ export default function App() {
         <section className={`chat-pane chat-theme-${chatTheme}`}>
           <div className="section-heading chat-toolbar">
             <div className="chat-toolbar-left">
-              <h2>Chat</h2>
+              <h2>{tx("chat")}</h2>
               <div className="chat-theme-switch" role="radiogroup" aria-label="Chat theme">
                 {CHAT_THEMES.map((option) => (
                   <button
@@ -1122,11 +1229,12 @@ export default function App() {
                       id: id(),
                       speaker_id: speakerId,
                       text: "",
+                      tone_id: toneId,
                     },
                   ]);
                 }}
               >
-                + Message
+                + {tx("addMessage")}
               </button>
             </div>
           </div>
@@ -1134,43 +1242,63 @@ export default function App() {
           <div className="chat">
             {chatEmpty && (
               <div className="empty-state chat-empty">
-                <strong>Start the conversation</strong>
-                <p>Type in a bubble, or import a script. Ctrl+Enter when ready.</p>
+                <strong>{tx("startConversation")}</strong>
+                <p>{tx("startConversationHint")}</p>
               </div>
             )}
             {messages.map((message, index) => {
               const speaker = speakerById.get(message.speaker_id);
               const side = speakerSide.get(message.speaker_id) || "left";
               const active = activeMessageId === message.id;
+              const messageTone = message.tone_id || toneId;
               return (
                 <article className={`bubble-row ${side} ${active ? "active" : ""}`} key={message.id}>
                   <div className="bubble-stack">
-                    <label className="bubble-speaker">
-                      <select
-                        value={message.speaker_id}
-                        aria-label="Speaker"
-                        onChange={(e) => updateMessage(message, { speaker_id: e.target.value })}
-                        onFocus={() => setActiveMessageId(message.id)}
-                      >
-                        {speakers.map((s) => (
-                          <option key={s.id} value={s.id}>
-                            {s.name}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
+                    <div className="bubble-meta">
+                      <label className="bubble-speaker">
+                        <select
+                          value={message.speaker_id}
+                          aria-label={tx("speakers")}
+                          onChange={(e) => updateMessage(message, { speaker_id: e.target.value })}
+                          onFocus={() => setActiveMessageId(message.id)}
+                        >
+                          {speakers.map((s) => (
+                            <option key={s.id} value={s.id}>
+                              {s.name}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      {tones.length > 0 && (
+                        <label className="bubble-tone">
+                          <select
+                            value={messageTone}
+                            aria-label={tx("tone")}
+                            title={tx("toneHint")}
+                            onChange={(e) => updateMessage(message, { tone_id: e.target.value })}
+                            onFocus={() => setActiveMessageId(message.id)}
+                          >
+                            {tones.map((tone) => (
+                              <option key={tone.id} value={tone.id}>
+                                {tone.label}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      )}
+                    </div>
                     <div className={`bubble ${side}`}>
                       <AutoTextarea
                         className="bubble-input"
                         value={message.text}
-                        placeholder="Message"
+                        placeholder={tx("messagePlaceholder")}
                         onFocus={() => setActiveMessageId(message.id)}
                         onChange={(value) => updateMessage(message, { text: value })}
                       />
                       <div className="bubble-actions">
                         <button
                           type="button"
-                          title="Preview"
+                          title={tx("preview")}
                           disabled={!message.text.trim() || !speaker || busy}
                           onClick={() => speaker && preview(message.text, speaker)}
                         >
@@ -1178,21 +1306,21 @@ export default function App() {
                         </button>
                         <button
                           type="button"
-                          title="Regenerate this line"
+                          title={tx("regenerateLine")}
                           disabled={!message.text.trim() || !speaker || busy || !topic.trim()}
                           onClick={() => void regenerateMessage(message, index)}
                         >
                           ↻
                         </button>
-                        <button type="button" title="Move up" onClick={() => move(index, -1)}>
+                        <button type="button" title={tx("moveUp")} onClick={() => move(index, -1)}>
                           ↑
                         </button>
-                        <button type="button" title="Move down" onClick={() => move(index, 1)}>
+                        <button type="button" title={tx("moveDown")} onClick={() => move(index, 1)}>
                           ↓
                         </button>
                         <button
                           type="button"
-                          title="Duplicate"
+                          title={tx("duplicate")}
                           onClick={() =>
                             setMessages((items) => {
                               const copy = [...items];
@@ -1206,7 +1334,7 @@ export default function App() {
                         <button
                           type="button"
                           className="danger"
-                          title="Delete"
+                          title={tx("delete")}
                           onClick={() => setMessages((items) => items.filter((item) => item.id !== message.id))}
                         >
                           ×
@@ -1219,8 +1347,8 @@ export default function App() {
             })}
           </div>
 
-          <div className="chat-compose-bar" aria-label="Insert expression tags">
-            {SSML_ACTIONS.map((action) => (
+          <div className="chat-compose-bar" aria-label={tx("insertTags")}>
+            {tagActions.map((action) => (
               <button
                 key={action.tag}
                 type="button"
@@ -1237,17 +1365,17 @@ export default function App() {
         ) : (
         <section className="chat-pane lecture-pane">
           <div className="section-heading">
-            <h2>Lecture script</h2>
+            <h2>{tx("lectureScript")}</h2>
             <span className="plan-meta">
               {lecturePlan
                 ? `${lecturePlan.count} sections · ${formatDuration(lecturePlan.estimated_seconds ?? Math.max(1, Math.round(lecturePlan.characters / 13.5)))}`
-                : "Paste a long text"}
+                : tx("pasteLecturePlaceholder")}
             </span>
           </div>
           {lectureEmpty && (
             <div className="empty-state">
-              <strong>Paste your lecture</strong>
-              <p>Blank lines become sections. Estimated duration updates as you type. Ctrl+Enter to generate.</p>
+              <strong>{tx("pasteLecture")}</strong>
+              <p>{tx("pasteLectureHint")}</p>
             </div>
           )}
           <textarea
@@ -1266,7 +1394,7 @@ export default function App() {
           />
           {lecturePlan && lecturePlan.count > 0 && (
             <div className="lecture-preview">
-              <strong>Sections preview</strong>
+              <strong>{tx("sectionsPreview")}</strong>
               <ol>
                 {lecturePlan.chunks.slice(0, 8).map((chunk, index) => (
                   <li key={`${index}-${chunk.slice(0, 24)}`}>
@@ -1274,11 +1402,15 @@ export default function App() {
                   </li>
                 ))}
               </ol>
-              {lecturePlan.count > 8 && <p className="muted">+{lecturePlan.count - 8} more sections</p>}
+              {lecturePlan.count > 8 && (
+                <p className="muted">
+                  +{lecturePlan.count - 8} {tx("moreSections")}
+                </p>
+              )}
             </div>
           )}
-          <div className="chat-compose-bar" aria-label="Insert expression tags">
-            {SSML_ACTIONS.map((action) => (
+          <div className="chat-compose-bar" aria-label={tx("insertTags")}>
+            {tagActions.map((action) => (
               <button
                 key={action.tag}
                 type="button"
@@ -1299,7 +1431,7 @@ export default function App() {
             <section className="panel player">
               <div className="player-head">
                 <div className="audio-sphere" aria-hidden="true" />
-                <h2>{audioName || "Ready"}</h2>
+                <h2>{audioName || tx("ready")}</h2>
               </div>
               <AudioPlayer
                 src={api.base + audioUrl}
@@ -1339,16 +1471,16 @@ export default function App() {
             <div className="drawer-head">
               <h2>
                 {panel === "import"
-                  ? "Import"
+                  ? tx("import")
                   : panel === "history"
-                    ? "History"
+                    ? tx("history")
                     : panel === "models"
-                      ? "Models"
+                      ? tx("models")
                       : panel === "projects"
-                        ? "Projects"
+                        ? tx("projects")
                         : panel === "voices"
-                          ? "Voices"
-                          : "Pronunciation"}
+                          ? tx("voices")
+                          : tx("dict")}
               </h2>
               <ActionButton label="Close" onClick={() => setPanel(null)}>
                 <Icon name="close" />

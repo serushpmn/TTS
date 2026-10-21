@@ -1102,9 +1102,82 @@ html[data-mode="night"] .offline-banner.ok { background: #1e3320; }
 
 .pause-presets { display: inline-flex; gap: 4px; }
 .pause-presets button,
-.voice-card-actions button.active {
+.voice-card-actions button.active,
+.tone-chips button.active,
+.locale-switch button.active {
   border-color: var(--ink);
   background: var(--panel);
+}
+
+.locale-switch {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+}
+.locale-switch button {
+  min-width: 2.2rem;
+  padding: 0.3rem 0.45rem;
+  border: 1px solid var(--color-button-border);
+  border-radius: var(--radius-buttons);
+  background: var(--btn);
+  color: inherit;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.delivery-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 18px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+}
+.tone-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+}
+.delivery-label {
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.tone-chips {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.tone-chips button {
+  border: 1px solid var(--color-button-border);
+  border-radius: 999px;
+  background: var(--btn);
+  color: inherit;
+  font-size: 12px;
+  padding: 0.3rem 0.7rem;
+}
+.synth-lang-field {
+  margin-inline-start: auto;
+}
+.bubble-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 4px;
+}
+.bubble-tone select {
+  font-size: 11px;
+  padding: 0.15rem 0.35rem;
+  max-width: 7.5rem;
+}
+.app-shell.locale-fa {
+  font-family: "Vazirmatn", "Segoe UI", Tahoma, sans-serif;
 }
 .check-inline {
   display: inline-flex;

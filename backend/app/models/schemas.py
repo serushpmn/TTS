@@ -25,6 +25,7 @@ class Message(BaseModel):
     id: str
     speaker_id: str
     text: str = Field(max_length=8000)
+    tone_id: str | None = None
 
     @field_validator("text")
     @classmethod
@@ -41,6 +42,8 @@ class ConversationRequest(BaseModel):
     speaker_change_pause: float = Field(default=2.5, ge=0.0, le=4.0)
     same_speaker_pause: float = Field(default=0.35, ge=0.0, le=2.0)
     trim_silence: bool = False
+    tone_id: str | None = None
+    synth_lang: str | None = "en-us"
     topic: str = Field(default="conversation", min_length=1, max_length=120)
     model_id: str | None = None
 
@@ -52,6 +55,8 @@ class LectureRequest(BaseModel):
     speed: float = Field(default=1.0, ge=0.5, le=2.0)
     section_pause: float = Field(default=0.85, ge=0.0, le=3.0)
     trim_silence: bool = False
+    tone_id: str | None = None
+    synth_lang: str | None = "en-us"
     model_id: str | None = None
 
     @field_validator("text")
@@ -83,6 +88,8 @@ class SegmentRegenRequest(BaseModel):
     voice_id: str
     speed: float = Field(default=1.0, ge=0.5, le=2.0)
     model_id: str | None = None
+    tone_id: str | None = None
+    synth_lang: str | None = "en-us"
     # Full script context for recombine (dialogue messages or lecture chunks).
     messages: list[Message] | None = None
     speakers: list[Speaker] | None = None
@@ -104,6 +111,8 @@ class Project(BaseModel):
     speaker_change_pause: float = Field(default=2.5, ge=0.0, le=4.0)
     same_speaker_pause: float = Field(default=0.35, ge=0.0, le=2.0)
     trim_silence: bool = False
+    tone_id: str | None = None
+    synth_lang: str | None = "en-us"
     lecture_text: str = ""
     narrator_voice: str = "af_heart"
     narrator_speed: float = Field(default=1.0, ge=0.5, le=2.0)
@@ -132,6 +141,9 @@ class PrefsUpdate(BaseModel):
     favorite_voices: list[str] | None = None
     default_voice_id: str | None = None
     trim_silence_default: bool | None = None
+    ui_locale: str | None = None
+    synth_lang: str | None = None
+    default_tone_id: str | None = None
 
 
 class PronunciationEntry(BaseModel):

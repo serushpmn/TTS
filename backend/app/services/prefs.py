@@ -5,6 +5,8 @@ from threading import Lock
 
 from app.config import settings
 from app.services.atomic import atomic_write_json
+from app.services.tone import get_tone
+from app.tts.languages import get_language
 from app.tts.registry import DEFAULT_MODEL_ID, get_variant
 from app.tts.voices import find_voice
 
@@ -20,6 +22,9 @@ def _defaults() -> dict:
         "favorite_voices": [],
         "default_voice_id": "af_heart",
         "trim_silence_default": False,
+        "ui_locale": "en",
+        "synth_lang": "auto",
+        "default_tone_id": "neutral",
     }
 
 
@@ -48,6 +53,18 @@ def _read_unlocked() -> dict:
         default_voice = "af_heart"
     merged["default_voice_id"] = default_voice
     merged["trim_silence_default"] = bool(merged.get("trim_silence_default", False))
+    locale = str(merged.get("ui_locale") or "en").lower()
+    if locale not in ("en", "fa", "de"):
+        locale = "en"
+    merged["ui_locale"] = locale
+    try:
+        get_language(str(merged.get("synth_lang") or "en-us"))
+    except ValueError:
+        merged["synth_lang"] = "en-us"
+    try:
+        get_tone(str(merged.get("default_tone_id") or "neutral"))
+    except ValueError:
+        merged["default_tone_id"] = "neutral"
     return merged
 
 
@@ -84,6 +101,17 @@ def save_prefs(patch: dict) -> dict:
             current["default_voice_id"] = voice_id
         if "trim_silence_default" in patch and patch["trim_silence_default"] is not None:
             current["trim_silence_default"] = bool(patch["trim_silence_default"])
+        if "ui_locale" in patch and patch["ui_locale"] is not None:
+            locale = str(patch["ui_locale"]).lower()
+            if locale not in ("en", "fa", "de"):
+                raise ValueError("ui_locale must be en, fa, or de.")
+            current["ui_locale"] = locale
+        if "synth_lang" in patch and patch["synth_lang"] is not None:
+            get_language(str(patch["synth_lang"]))
+            current["synth_lang"] = str(patch["synth_lang"])
+        if "default_tone_id" in patch and patch["default_tone_id"] is not None:
+            get_tone(str(patch["default_tone_id"]))
+            current["default_tone_id"] = str(patch["default_tone_id"])
         for key, value in patch.items():
             if key in (
                 "selected_model_id",
@@ -91,6 +119,9 @@ def save_prefs(patch: dict) -> dict:
                 "favorite_voices",
                 "default_voice_id",
                 "trim_silence_default",
+                "ui_locale",
+                "synth_lang",
+                "default_tone_id",
             ):
                 continue
             current[key] = value

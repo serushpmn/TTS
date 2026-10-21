@@ -60,16 +60,21 @@ Stop with `Ctrl+C`.
 2. Enter a **topic** (output filename).
 3. Set **speakers** and voices (must mix female + male).
 4. Type the chat, or **Import** `Speaker: line` text.
-5. Optional tags: `[pause]`, `[pause:1.5s]`, `[laugh]`, `[sigh]`, `[slow]`, `[fast]`…  
+5. Optional **tone chips** (Calm, Excited, …) — map to speed/pause only; Kokoro has no native emotion.
+6. Optional tags: `[pause]`, `[pause:1.5s]`, `[laugh]`, `[sigh]`, `[slow]`, `[fast]`…  
    Laugh/sigh are **spoken approximations**, not recorded sound effects.
-6. Open **Models** to pick PyTorch or an ONNX variant (download on demand).
-7. **Generate**, then download **WAV** / **MP3**. Use **↻** on a bubble to regenerate one line.
+7. Set **Speech language** (Auto / EN-US / EN-GB / experimental DE, ES, FR, IT). Non-English needs **PyTorch** + espeak; ONNX stays English-only.
+8. Open **Models** to pick PyTorch or an ONNX variant (download on demand).
+9. **Generate**, then download **WAV** / **MP3**. Use **↻** on a bubble to regenerate one line.
 
 ### Lecture mode
 1. Choose **Lecture**.
-2. Pick a narrator voice and section pause.
+2. Pick a narrator voice, tone, speech language, and section pause.
 3. Paste a long script. Blank lines become sections; long paragraphs auto-split.
 4. **Generate** — progress shows each section, then WAV + MP3.
+
+### UI language
+Use **EN / FA / DE** in the header. Persian (FA) switches the layout to RTL. Choice is saved in prefs.
 
 ### Header tools
 
@@ -163,9 +168,7 @@ TTS/
 
 See [`docs/FEATURE_ROADMAP.md`](docs/FEATURE_ROADMAP.md).
 
-**Shipped in stages 1–4:** pause presets (short/normal/long) + per-project change/same/section pauses; optional trim leading/trailing silence; Voices panel with pre-baked samples, gender/accent/language filters, SVG avatars, compare (2–3), favorites, default voice; pronunciation dictionary (Dict panel).
-
-**Still planned:** emotion/tone chips, synth language (e.g. German), UI i18n (fa/en/de).
+**Shipped (roadmap stages 1–7):** pause presets + per-project pauses; trim silence; Voices panel (samples, filters, avatars, compare, favorites, default); pronunciation dictionary; **tone chips** (speed/pause approximations); **speech language** (Auto/EN + experimental DE/ES/FR/IT on Torch); **UI i18n** EN/FA/DE.
 
 Bake all voice samples once (uses the selected model):
 

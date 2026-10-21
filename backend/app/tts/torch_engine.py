@@ -8,6 +8,7 @@ import wave
 import numpy as np
 
 from app.config import settings
+from app.tts.languages import ensure_lang_registered, resolve_lang_for_voice
 from app.tts.registry import TORCH_ENGINE_ID
 from app.tts.voices import find_voice
 
@@ -22,39 +23,58 @@ class TorchKokoroEngine:
         self._pipelines: dict[str, object] = {}
         self._lock = Lock()
 
-    def _pipeline(self, voice_id: str):
-        find_voice(voice_id)
-        lang = "a" if voice_id.startswith("a") else "b"
+    def _pipeline(self, lang_code: str):
+        ensure_lang_registered(lang_code)
         with self._lock:
-            if lang not in self._pipelines:
+            if lang_code not in self._pipelines:
                 try:
                     from kokoro import KPipeline
                 except ImportError as error:
                     raise RuntimeError(
                         "Kokoro is not installed. Run pip install -r requirements.txt."
                     ) from error
-                self._pipelines[lang] = KPipeline(
-                    lang_code=lang,
+                self._pipelines[lang_code] = KPipeline(
+                    lang_code=lang_code,
                     repo_id="hexgrad/Kokoro-82M",
                     device=settings.kokoro_torch_device,
                 )
-            return self._pipelines[lang]
+            return self._pipelines[lang_code]
 
     @staticmethod
-    def cache_key(text: str, voice_id: str, speed: float, model_id: str = TORCH_ENGINE_ID) -> str:
-        return hashlib.sha256(f"{model_id}|{text}|{voice_id}|{speed}".encode()).hexdigest()
+    def cache_key(
+        text: str,
+        voice_id: str,
+        speed: float,
+        model_id: str = TORCH_ENGINE_ID,
+        lang_id: str = "en-us",
+    ) -> str:
+        return hashlib.sha256(
+            f"{model_id}|{lang_id}|{text}|{voice_id}|{speed}".encode()
+        ).hexdigest()
 
-    def synthesize(self, text: str, voice_id: str, speed: float) -> Path:
+    def synthesize(
+        self,
+        text: str,
+        voice_id: str,
+        speed: float,
+        *,
+        synth_lang: str | None = None,
+    ) -> Path:
+        find_voice(voice_id)
         text = " ".join(text.split())
         if not text:
             raise ValueError("Dialogue text cannot be empty.")
-        path = settings.temp_dir / f"{self.cache_key(text, voice_id, speed)}.wav"
+        language = resolve_lang_for_voice(voice_id, synth_lang)
+        if language.engine == "onnx":
+            raise RuntimeError(f"Language {language.id} is not available on the Torch engine path.")
+        path = settings.temp_dir / f"{self.cache_key(text, voice_id, speed, lang_id=language.id)}.wav"
         if path.exists():
             return path
         try:
+            pipeline = self._pipeline(language.lang_code)
             chunks = [
                 np.asarray(result.audio, dtype=np.float32)
-                for result in self._pipeline(voice_id)(text, voice=voice_id, speed=speed)
+                for result in pipeline(text, voice=voice_id, speed=speed)
                 if getattr(result, "audio", None) is not None
             ]
         except Exception as error:

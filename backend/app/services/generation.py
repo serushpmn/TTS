@@ -75,6 +75,8 @@ def run_generation(job_id: str, request: ConversationRequest) -> None:
                 engine=engine,
                 model_id=model_id,
                 trim_silence=request.trim_silence,
+                tone_id=message.tone_id or request.tone_id,
+                synth_lang=request.synth_lang,
             )
             if jobs.is_cancelled(job_id):
                 _cleanup_outputs(output_paths)
@@ -197,6 +199,8 @@ def run_lecture(job_id: str, request: LectureRequest) -> None:
                 engine=engine,
                 model_id=model_id,
                 trim_silence=request.trim_silence,
+                tone_id=request.tone_id,
+                synth_lang=request.synth_lang,
             )
             if jobs.is_cancelled(job_id):
                 _cleanup_outputs(output_paths)

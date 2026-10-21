@@ -13,6 +13,7 @@ export type Message = {
   id: string;
   speaker_id: string;
   text: string;
+  tone_id?: string | null;
 };
 export type Project = {
   id: string;
@@ -24,6 +25,8 @@ export type Project = {
   speaker_change_pause: number;
   same_speaker_pause?: number;
   trim_silence?: boolean;
+  tone_id?: string | null;
+  synth_lang?: string | null;
   lecture_text?: string;
   narrator_voice?: string;
   narrator_speed?: number;
@@ -32,6 +35,23 @@ export type Project = {
   audio_url?: string;
   created_at?: string | null;
   updated_at?: string | null;
+};
+export type ToneStyle = {
+  id: string;
+  label: string;
+  description: string;
+  prefix_tags: string;
+  speed_rate: number;
+  native_emotion: boolean;
+};
+export type SynthLanguage = {
+  id: string;
+  label: string;
+  lang_code: string;
+  status: string;
+  engine: string;
+  notes: string;
+  voice_prefixes: string[];
 };
 export type HistoryItem = {
   id: string;
@@ -52,6 +72,8 @@ export type LectureRequest = {
   speed: number;
   section_pause: number;
   trim_silence?: boolean;
+  tone_id?: string | null;
+  synth_lang?: string | null;
   model_id?: string | null;
 };
 export type GenerateJob = {
@@ -138,5 +160,8 @@ export type AppPrefs = {
   favorite_voices: string[];
   default_voice_id: string;
   trim_silence_default: boolean;
+  ui_locale?: string;
+  synth_lang?: string;
+  default_tone_id?: string;
 };
 export type AppMode = "dialogue" | "lecture";

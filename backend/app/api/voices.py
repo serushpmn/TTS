@@ -9,8 +9,10 @@ from app.config import settings
 from app.models.schemas import PronunciationDict, PronunciationEntry, Voice
 from app.services import pronunciation as pronunciation_service
 from app.services.prefs import load_prefs
+from app.services.tone import list_tones
 from app.services.voice_samples import ensure_sample, list_sample_status, sample_url
 from app.tts.factory import engine_hub
+from app.tts.languages import list_languages
 from app.tts.model_manager import model_manager
 from app.tts.voices import list_voices
 
@@ -82,6 +84,16 @@ def ensure_all_samples(force: bool = False) -> dict:
 @router.get("/api/status/offline")
 def offline_status() -> dict:
     return model_manager.offline_status()
+
+
+@router.get("/api/tones")
+def tones() -> list[dict]:
+    return list_tones()
+
+
+@router.get("/api/languages")
+def languages() -> list[dict]:
+    return list_languages()
 
 
 @router.get("/api/pronunciation")

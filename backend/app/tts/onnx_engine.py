@@ -9,6 +9,7 @@ import numpy as np
 import onnxruntime as ort
 
 from app.config import settings
+from app.tts.languages import get_language, resolve_lang_for_voice
 from app.tts.voices import find_voice
 
 
@@ -58,29 +59,48 @@ class OnnxKokoroEngine:
                 "kokoro-onnx is not installed. Run: pip install kokoro-onnx onnxruntime"
             ) from error
         session = create_safe_session(self.model_path)
-        # Kokoro.from_session expects session._model_path in some versions; set it defensively.
         if not hasattr(session, "_model_path"):
             session._model_path = str(self.model_path)  # type: ignore[attr-defined]
         self._kokoro = Kokoro.from_session(session, str(self.voices_path))
 
     @staticmethod
-    def cache_key(text: str, voice_id: str, speed: float, model_id: str) -> str:
-        return hashlib.sha256(f"{model_id}|{text}|{voice_id}|{speed}".encode()).hexdigest()
+    def cache_key(text: str, voice_id: str, speed: float, model_id: str, lang_id: str = "en-us") -> str:
+        return hashlib.sha256(f"{model_id}|{lang_id}|{text}|{voice_id}|{speed}".encode()).hexdigest()
 
-    def synthesize(self, text: str, voice_id: str, speed: float) -> Path:
+    def synthesize(
+        self,
+        text: str,
+        voice_id: str,
+        speed: float,
+        *,
+        synth_lang: str | None = None,
+    ) -> Path:
         find_voice(voice_id)
         text = " ".join(text.split())
         if not text:
             raise ValueError("Dialogue text cannot be empty.")
-        path = settings.temp_dir / f"{self.cache_key(text, voice_id, speed, self.model_id)}.wav"
+        language = resolve_lang_for_voice(voice_id, synth_lang)
+        if language.id not in ("en-us", "en-gb") and language.engine != "both":
+            raise RuntimeError(
+                f"ONNX engine only supports English phonemization. "
+                f"Select language en-us/en-gb, or switch to the PyTorch engine for '{language.id}'."
+            )
+        # Force English family for ONNX.
+        if language.id not in ("en-us", "en-gb"):
+            language = get_language("en-gb" if voice_id.startswith("b") else "en-us")
+        path = settings.temp_dir / f"{self.cache_key(text, voice_id, speed, self.model_id, language.id)}.wav"
         if path.exists():
             return path
-        lang = "en-gb" if voice_id.startswith("b") else "en-us"
         with self._lock:
             if self._kokoro is None:
                 raise RuntimeError("ONNX engine is not loaded.")
             try:
-                audio, rate = self._kokoro.create(text, voice=voice_id, speed=speed, lang=lang)
+                audio, rate = self._kokoro.create(
+                    text,
+                    voice=voice_id,
+                    speed=speed,
+                    lang=language.onnx_lang,
+                )
             except Exception as error:
                 raise RuntimeError(f"ONNX Kokoro could not generate this message: {error}") from error
         if audio is None or len(audio) == 0:
