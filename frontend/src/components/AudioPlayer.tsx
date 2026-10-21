@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { Icon } from "./Icons";
 
 type Props = {
   src: string;
@@ -58,17 +59,20 @@ export function AudioPlayer({ src, label, playbackRate = 1, onPlaybackRateChange
         onPlay={() => setPlaying(true)}
       />
       {label && <div className="audio-player-label muted">{label}</div>}
+      <div className="player-orb" aria-hidden="true">
+        <span className={`player-orb-core ${playing ? "playing" : ""}`} />
+      </div>
+      <div className="player-wave" aria-hidden="true">
+        {Array.from({ length: 28 }, (_, i) => {
+          const active = progress > (i / 28) * 100;
+          const h = 28 + ((i * 17) % 40);
+          return <span key={i} className={active ? "on" : ""} style={{ height: `${h}%` }} />;
+        })}
+      </div>
       <div className="player-row">
         <button type="button" className="player-play" onClick={toggle} aria-label={playing ? "Pause" : "Play"}>
-          {playing ? "❚❚" : "▶"}
+          <Icon name={playing ? "pause" : "play"} size={18} />
         </button>
-        <div className="player-wave" aria-hidden="true">
-          {Array.from({ length: 28 }, (_, i) => {
-            const active = progress > (i / 28) * 100;
-            const h = 28 + ((i * 17) % 40);
-            return <span key={i} className={active ? "on" : ""} style={{ height: `${h}%` }} />;
-          })}
-        </div>
         <input
           className="player-seek"
           type="range"

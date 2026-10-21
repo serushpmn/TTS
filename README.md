@@ -65,7 +65,7 @@ Stop with `Ctrl+C`.
    Laugh/sigh are **spoken approximations**, not recorded sound effects.
 7. Set **Speech language** (Auto / EN-US / EN-GB / experimental DE, ES, FR, IT). Non-English needs **PyTorch** + espeak; ONNX stays English-only.
 8. Open **Models** to pick PyTorch or an ONNX variant (download on demand).
-9. **Generate**, then download **WAV** / **MP3**. Use **↻** on a bubble to regenerate one line.
+9. **Generate** (animated progress orb while waiting), then download **WAV** / **MP3**. Use the regenerate icon on a bubble to redo one line.
 
 ### Lecture mode
 1. Choose **Lecture**.

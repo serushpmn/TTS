@@ -2,7 +2,8 @@
 import { api } from "./api";
 import { CHAT_THEMES, loadChatTheme, saveChatTheme, type ChatTheme } from "./bubbles";
 import { AudioPlayer } from "./components/AudioPlayer";
-import { Icon } from "./components/Icons";
+import { GeneratingVisual } from "./components/GeneratingVisual";
+import { Icon, tagIcon } from "./components/Icons";
 import { ModelPanel } from "./components/ModelPanel";
 import { ProjectsPanel } from "./components/ProjectsPanel";
 import { PronunciationPanel } from "./components/PronunciationPanel";
@@ -82,7 +83,7 @@ function slugify(value: string) {
 }
 
 function formatEta(seconds: number | null | undefined) {
-  if (seconds == null) return "estimatingâ€¦";
+  if (seconds == null) return "estimating…";
   if (seconds <= 1) return "almost done";
   if (seconds < 60) return `~${Math.ceil(seconds)}s left`;
   const minutes = Math.floor(seconds / 60);
@@ -565,7 +566,7 @@ export default function App() {
     setDirtyMessageIds(new Set());
     setActiveProfile(null);
     setPanel(null);
-    setStatus(`Opened â€œ${project.name}â€`);
+    setStatus(`Opened “${project.name}”`);
   }
 
   function togglePanel(next: PanelId) {
@@ -649,7 +650,7 @@ export default function App() {
 
   async function pollJob(started: GenerateJob) {
     jobIdRef.current = started.id;
-    setJob({ ...started, percent: 1, stage: "Queuedâ€¦" });
+    setJob({ ...started, percent: 1, stage: "Queued…" });
     let latest = started;
     while (latest.status === "queued" || latest.status === "running") {
       await new Promise((resolve) => setTimeout(resolve, 450));
@@ -878,7 +879,7 @@ export default function App() {
         ),
       ];
       if (missing.length) {
-        setError(`New speakers added â€” set their voices: ${missing.join(", ")}`);
+        setError(`New speakers added — set their voices: ${missing.join(", ")}`);
         const additions = missing.map((name) => ({
           id: id(),
           name,
@@ -1138,7 +1139,7 @@ export default function App() {
             </button>
           ) : (
             <button className={`primary generate-btn ${busy ? "busy" : ""}`} disabled={busy} onClick={generate}>
-              {busy && <span className="spinner" aria-hidden="true" />}
+              {busy && <Icon name="spinner" />}
               {busy ? tx("generating") : tx("generate")}
             </button>
           )}
@@ -1194,7 +1195,7 @@ export default function App() {
                           setPanel("voices");
                         }}
                       >
-                        {voices.find((v) => v.id === speaker.voice_id)?.name || speaker.voice_id} Â· {tx("pickVoice")}
+                        {voices.find((v) => v.id === speaker.voice_id)?.name || speaker.voice_id} · {tx("pickVoice")}
                       </button>
                       <label className="speed-row">
                         <input
@@ -1268,7 +1269,7 @@ export default function App() {
                       setPanel("voices");
                     }}
                   >
-                    {voices.find((v) => v.id === narratorVoice)?.name || narratorVoice} Â· {tx("pickNarrator")}
+                    {voices.find((v) => v.id === narratorVoice)?.name || narratorVoice} · {tx("pickNarrator")}
                   </button>
                   <label className="speed-row">
                     <input
@@ -1348,7 +1349,7 @@ export default function App() {
                       }
                     }}
                   >
-                    â–¶
+                    <Icon name="play" size={12} />
                   </span>
                 </button>
               ))}
@@ -1457,8 +1458,8 @@ export default function App() {
           {error && (
             <div className="notice error">
               {error}
-              <button type="button" onClick={() => setError("")}>
-                Ã—
+              <button type="button" onClick={() => setError("")} aria-label={tx("close")}>
+                <Icon name="close" />
               </button>
             </div>
           )}
@@ -1562,7 +1563,7 @@ export default function App() {
                               disabled={!message.text.trim() || !speaker || busy}
                               onClick={() => speaker && preview(message.text, speaker, message.tone_id || toneId)}
                             >
-                              â–¶
+                              <Icon name="play" />
                             </button>
                             <button
                               type="button"
@@ -1572,13 +1573,13 @@ export default function App() {
                               disabled={!message.text.trim() || !speaker || busy || !topic.trim()}
                               onClick={() => void regenerateMessage(message, index)}
                             >
-                              {isRegening ? "â€¦" : "â†»"}
+                              <Icon name={isRegening ? "spinner" : "regen"} />
                             </button>
                             <button type="button" title={tx("moveUp")} aria-label={tx("moveUp")} onClick={() => move(index, -1)}>
-                              â†‘
+                              <Icon name="up" />
                             </button>
                             <button type="button" title={tx("moveDown")} aria-label={tx("moveDown")} onClick={() => move(index, 1)}>
-                              â†“
+                              <Icon name="down" />
                             </button>
                             <button
                               type="button"
@@ -1592,7 +1593,7 @@ export default function App() {
                                 })
                               }
                             >
-                              â§‰
+                              <Icon name="duplicate" />
                             </button>
                             <button
                               type="button"
@@ -1601,7 +1602,7 @@ export default function App() {
                               aria-label={tx("delete")}
                               onClick={() => setMessages((items) => items.filter((item) => item.id !== message.id))}
                             >
-                              Ã—
+                              <Icon name="close" />
                             </button>
                           </div>
                         </div>
@@ -1613,7 +1614,9 @@ export default function App() {
               <div className="composer-toolbar" aria-label={tx("insertTags")}>
                 <button
                   type="button"
-                  className="quiet-btn"
+                  className="quiet-btn toolbar-icon-btn"
+                  title={tx("addMessage")}
+                  aria-label={tx("addMessage")}
                   onClick={() => {
                     const speakerId = speakers[messages.length % speakers.length]?.id || speakers[0]?.id || "";
                     setMessages([
@@ -1622,20 +1625,30 @@ export default function App() {
                     ]);
                   }}
                 >
-                  + {tx("addMessage")}
+                  <Icon name="bubble" />
                 </button>
                 {tagActions.map((action) => (
                   <button
                     key={action.tag}
                     type="button"
+                    className="toolbar-icon-btn"
                     title={action.title}
                     aria-label={action.title}
                     onClick={() => insertTag(action.tag)}
                     disabled={busy}
                   >
-                    <Icon name="pause" /> {action.label}
+                    <Icon name={tagIcon(action.tag)} />
                   </button>
                 ))}
+                <button
+                  type="button"
+                  className="quiet-btn toolbar-icon-btn"
+                  title={tx("import")}
+                  aria-label={tx("import")}
+                  onClick={() => togglePanel("import")}
+                >
+                  <Icon name="document" />
+                </button>
                 {selectedMessageIds.size > 0 && (
                   <button type="button" className="quiet-btn" onClick={() => setSelectedMessageIds(new Set())}>
                     {tx("clearSelection")} ({selectedMessageIds.size})
@@ -1649,7 +1662,7 @@ export default function App() {
                 <h2>{tx("lectureScript")}</h2>
                 <span className="plan-meta">
                   {lecturePlan
-                    ? `${lecturePlan.count} sections Â· ${formatDuration(lecturePlan.estimated_seconds ?? Math.max(1, Math.round(lecturePlan.characters / 13.5)))}`
+                    ? `${lecturePlan.count} sections · ${formatDuration(lecturePlan.estimated_seconds ?? Math.max(1, Math.round(lecturePlan.characters / 13.5)))}`
                     : tx("pasteLecturePlaceholder")}
                 </span>
               </div>
@@ -1674,12 +1687,13 @@ export default function App() {
                   <button
                     key={action.tag}
                     type="button"
+                    className="toolbar-icon-btn"
                     title={action.title}
                     aria-label={action.title}
                     onClick={() => insertTag(action.tag)}
                     disabled={busy}
                   >
-                    <Icon name="pause" /> {action.label}
+                    <Icon name={tagIcon(action.tag)} />
                   </button>
                 ))}
               </div>
@@ -1689,20 +1703,13 @@ export default function App() {
 
         <aside className="output-pane">
           {generating && job && (
-            <div className="gen-progress">
-              <div className="progress-meta">
-                <strong>{job.stage}</strong>
-                <span>
-                  {formatEta(job.eta_seconds)} Â· {Math.round(job.percent)}%
-                </span>
-              </div>
-              <div className="progress-track">
-                <div className="progress-fill" style={{ width: `${Math.max(job.percent, 4)}%` }} />
-              </div>
-              <button type="button" className="danger" onClick={() => void cancelGeneration()}>
-                <Icon name="stop" /> {tx("stopGeneration")}
-              </button>
-            </div>
+            <GeneratingVisual
+              percent={job.percent}
+              stage={job.stage}
+              etaLabel={formatEta(job.eta_seconds)}
+              onCancel={() => void cancelGeneration()}
+              cancelLabel={tx("stopGeneration")}
+            />
           )}
 
           {audioUrl ? (
@@ -1723,16 +1730,16 @@ export default function App() {
                   download={`${exportBasename(topic || audioName || "conversation")}.wav`}
                   title={tx("downloadWav")}
                 >
-                  WAV
+                  <Icon name="download" /> {tx("downloadWav")}
                 </a>
                 {mp3Url && (
                   <a
-                    className="primary download"
+                    className="download download-secondary"
                     href={api.base + mp3Url}
                     download={`${exportBasename(topic || mp3Name || "conversation")}.mp3`}
                     title={tx("downloadMp3")}
                   >
-                    MP3
+                    <Icon name="download" /> {tx("downloadMp3")}
                   </a>
                 )}
               </div>
@@ -1748,7 +1755,7 @@ export default function App() {
           ) : (
             <section className="panel empty-side">
               <p>{tx("generateEmpty")}</p>
-              <p className="muted shortcut-hint">Ctrl+Enter Â· Esc</p>
+              <p className="muted shortcut-hint">Ctrl+Enter · Esc</p>
             </section>
           )}
           <p className="model-footnote">
@@ -1828,7 +1835,7 @@ export default function App() {
                     <div>
                       <strong>{item.topic}</strong>
                       <span>{formatWhen(item.created_at)}</span>
-                      {item.model_id && <span className="muted"> Â· {item.model_id}</span>}
+                      {item.model_id && <span className="muted"> · {item.model_id}</span>}
                     </div>
                     <div className="history-actions">
                       <a className="link-btn" href={api.base + item.url} download={item.filename}>

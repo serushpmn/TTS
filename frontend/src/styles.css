@@ -767,8 +767,8 @@ button, a, input, textarea, select {
   pointer-events: auto;
 }
 .bubble-actions button {
-  width: 26px;
-  height: 26px;
+  width: 28px;
+  height: 28px;
   padding: 0;
   border: 0;
   border-radius: 999px;
@@ -776,6 +776,13 @@ button, a, input, textarea, select {
   color: var(--ink);
   font-size: 12px;
   line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.bubble-actions button svg {
+  width: 14px;
+  height: 14px;
 }
 .bubble-actions button:hover { background: var(--btn-hover); }
 .bubble-actions button.danger { color: var(--danger); }
@@ -889,15 +896,17 @@ textarea:focus, input:focus, select:focus {
 .player audio { width: 100%; margin-bottom: 10px; }
 .download-row {
   display: grid;
-  grid-template-columns: 1fr 1fr;
   gap: 8px;
 }
 .download {
-  display: block;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   text-decoration: none;
   text-align: center;
-  padding: .55rem .75rem;
-  border-radius: var(--radius-buttons);
+  padding: .7rem 1rem;
+  border-radius: 12px;
   font-size: 13px;
   font-weight: 500;
 }
@@ -1636,6 +1645,13 @@ html[data-mode="night"] .offline-banner.ok { background: #1e3320; }
   border-radius: 50%;
   background: var(--btn-hover);
   font-size: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.tone-chip .tone-play svg {
+  width: 10px;
+  height: 10px;
 }
 .tone-chip:hover .tone-play,
 .tone-chip:focus-within .tone-play { opacity: 1; }
@@ -1699,7 +1715,8 @@ html[data-mode="night"] .offline-banner.ok { background: #1e3320; }
 .composer-toolbar {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  align-items: center;
+  gap: 4px;
   padding: var(--space-3) var(--space-4);
   border-top: 1px solid var(--line);
   background: var(--panel);
@@ -1708,10 +1725,33 @@ html[data-mode="night"] .offline-banner.ok { background: #1e3320; }
 .composer-toolbar button {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
-  border-radius: 8px;
-  padding: .4rem .65rem;
+  border-radius: 10px;
+  padding: .45rem .65rem;
   font-size: 12px;
+}
+.composer-toolbar .toolbar-icon-btn {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  color: var(--graphite, var(--ink));
+  background: transparent;
+  border: 0;
+}
+.composer-toolbar .toolbar-icon-btn:hover {
+  background: var(--btn-hover);
+  color: var(--ink);
+}
+.composer-toolbar .toolbar-icon-btn svg {
+  width: 18px;
+  height: 18px;
+}
+.icon-spin {
+  animation: icon-spin 0.85s linear infinite;
+}
+@keyframes icon-spin {
+  to { transform: rotate(360deg); }
 }
 
 .empty-hero {
@@ -1740,28 +1780,200 @@ html[data-mode="night"] .offline-banner.ok { background: #1e3320; }
   color: var(--caption);
 }
 
+.custom-player {
+  display: grid;
+  gap: 12px;
+  justify-items: center;
+}
+.custom-player .player-orb {
+  width: 120px;
+  height: 120px;
+  display: grid;
+  place-items: center;
+}
+.custom-player .player-orb-core {
+  width: 88px;
+  height: 88px;
+  border-radius: 50%;
+  background: conic-gradient(from 210deg, #ff6b9d, #ffb347, #6ec6ff, #a78bfa, #ff6b9d);
+  filter: saturate(1.1);
+  box-shadow: 0 12px 32px color-mix(in srgb, #6ec6ff 35%, transparent);
+  transition: transform 0.4s ease, filter 0.4s ease;
+}
+.custom-player .player-orb-core.playing {
+  animation: orb-breathe 2.4s ease-in-out infinite;
+  filter: saturate(1.25) brightness(1.05);
+}
+.custom-player .player-wave {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 3px;
+  width: 100%;
+  height: 48px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--ink) 92%, transparent);
+}
+.custom-player .player-wave span {
+  flex: 1;
+  max-width: 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, #fff 35%, transparent);
+  transition: background 0.15s ease, height 0.2s ease;
+}
+.custom-player .player-wave span.on {
+  background: #fff;
+}
 .custom-player .player-row {
   display: grid;
   grid-template-columns: auto 1fr auto;
   gap: 8px;
   align-items: center;
+  width: 100%;
 }
 .custom-player .player-play {
   width: 40px;
   height: 40px;
   border-radius: 50%;
   padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--ink);
+  color: var(--bg);
+  border: 0;
 }
-.custom-player .player-wave {
-  display: none;
-}
-.custom-player .player-seek { grid-column: 1 / -1; }
+.custom-player .player-seek { width: 100%; }
 .custom-player .player-time { font-size: 12px; white-space: nowrap; }
+.custom-player .audio-player-meta { width: 100%; }
 
-.gen-progress {
+.download-row {
   display: grid;
   gap: 8px;
 }
+.download-row .download {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  text-decoration: none;
+  border-radius: 12px;
+  padding: 0.7rem 1rem;
+  font-weight: 500;
+}
+.download-row .download-secondary {
+  background: transparent;
+  color: var(--ink);
+  border: 1px solid var(--line);
+}
+.download-row .download-secondary:hover {
+  background: var(--btn-hover);
+}
+
+.gen-progress,
+.gen-visual {
+  display: grid;
+  gap: 12px;
+  justify-items: center;
+  text-align: center;
+  padding: var(--space-4) var(--space-2);
+}
+.gen-visual .progress-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+}
+.gen-visual .progress-meta strong { font-size: 14px; }
+.gen-visual .progress-meta span { font-size: 12px; color: var(--muted); }
+.gen-orb {
+  position: relative;
+  width: 140px;
+  height: 140px;
+  display: grid;
+  place-items: center;
+}
+.gen-orb-core {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: conic-gradient(from 180deg, #ff6b9d, #ffb347, #6ec6ff, #a78bfa, #ff6b9d);
+  animation: orb-breathe 2.2s ease-in-out infinite, orb-hue 6s linear infinite;
+  box-shadow: 0 10px 36px color-mix(in srgb, #a78bfa 40%, transparent);
+  z-index: 1;
+}
+.gen-orb-ring {
+  position: absolute;
+  inset: 18px;
+  border-radius: 50%;
+  border: 1.5px solid color-mix(in srgb, #6ec6ff 55%, transparent);
+  animation: orb-ring 2.8s ease-out infinite;
+}
+.gen-orb-ring.delay {
+  inset: 8px;
+  border-color: color-mix(in srgb, #ff6b9d 45%, transparent);
+  animation-delay: 0.9s;
+}
+.gen-wave {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 3px;
+  width: 100%;
+  height: 44px;
+  padding: 6px 8px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--ink) 90%, transparent);
+}
+.gen-wave span {
+  width: 4px;
+  border-radius: 999px;
+  background: #fff;
+  height: 30%;
+  animation: wave-pulse 1.05s ease-in-out infinite;
+  opacity: 0.85;
+}
+.gen-visual .progress-track {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--track);
+  overflow: hidden;
+  width: 100%;
+}
+.gen-visual .progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #6ec6ff, #a78bfa, #ff6b9d);
+  background-size: 200% 100%;
+  animation: progress-sheen 2s linear infinite;
+  transition: width 0.35s ease;
+}
+.gen-cancel {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+@keyframes orb-breathe {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.08); }
+}
+@keyframes orb-hue {
+  to { filter: hue-rotate(360deg); }
+}
+@keyframes orb-ring {
+  0% { transform: scale(0.85); opacity: 0.7; }
+  100% { transform: scale(1.25); opacity: 0; }
+}
+@keyframes wave-pulse {
+  0%, 100% { height: 22%; opacity: 0.45; }
+  50% { height: 88%; opacity: 1; }
+}
+@keyframes progress-sheen {
+  0% { background-position: 0% 0; }
+  100% { background-position: 200% 0; }
+}
+
 .gen-progress .progress-track {
   height: 6px;
   border-radius: 999px;
@@ -1808,6 +2020,15 @@ html[data-mode="night"] .offline-banner.ok { background: #1e3320; }
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
     transition-duration: 0.01ms !important;
+  }
+  .gen-orb-core,
+  .custom-player .player-orb-core.playing {
+    animation: none !important;
+    filter: none !important;
+  }
+  .gen-wave span {
+    height: 50% !important;
+    opacity: 0.7 !important;
   }
 }
 
