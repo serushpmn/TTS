@@ -82,7 +82,8 @@ Use **EN / FA / DE** in the header. Persian (FA) switches the layout to RTL. Cho
 |---------|--------|
 | Night / Day | Appearance |
 | Guide | Short help |
-| Import | Paste dialogue script |
+| Import | Paste dialogue (`Speaker:`, SRT, CSV/TSV, `[Name]`, bullets) |
+| Profiles | Podcast / Lecture / Story presets (pauses + trim + tone) |
 | History | Open / download / delete past exports |
 | Models | Select / download / load / delete ONNX models; benchmark |
 | Projects | Save / open / rename / duplicate / delete projects |
@@ -168,9 +169,9 @@ TTS/
 
 See [`docs/FEATURE_ROADMAP.md`](docs/FEATURE_ROADMAP.md).
 
-**Shipped (roadmap stages 1–5):** pause presets + per-project pauses; trim silence; Voices panel (samples, filters, avatars, compare, favorites, default); pronunciation dictionary; **tone chips**; **speech language**; **UI i18n** EN/FA/DE; optional **strict cast** (mixed genders); preview with tone/lang; engine↔language guard before generate; export copy path/URL + Topic+date download names.
+**Shipped (roadmap stages 1–6):** pause presets; trim silence; Voices panel; pronunciation; tone chips + **tone samples**; speech language; UI i18n EN/FA/DE; optional strict cast; preview with tone/lang; engine↔language guard; export copy path/URL; **project profiles** (Podcast/Lecture/Story); smarter import (SRT/CSV/brackets/bullets); clearer single-line regen UX.
 
-**Next (stages 6–8 in roadmap):** tone samples; project profiles; smarter import; full panel i18n; collapsible delivery bar; history/project search; honest non-EN voices / batch queue (long-term).
+**Next (stages 7–8 in roadmap):** full panel i18n; collapsible delivery bar; history/project search; shortcuts; honest non-EN voices / batch queue (long-term).
 
 Bake all voice samples once (uses the selected model):
 

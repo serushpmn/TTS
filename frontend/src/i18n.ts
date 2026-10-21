@@ -94,6 +94,20 @@ const en: Dict = {
   cancelled: "Cancelled",
   lineRegenerated: "Line regenerated",
   regenerating: "Regenerating line",
+  updatingMix: "Updating mix with this line…",
+  regenHint: "Rebuilds the full mix using this edited line (keeps other turns).",
+  lineEdited: "edited",
+  playToneSample: "Play tone sample",
+  profiles: "Profiles",
+  profilePodcast: "Podcast",
+  profilePodcastHint: "Tighter pauses, trim silence, warm delivery",
+  profileLecture: "Lecture",
+  profileLectureHint: "Narration mode, normal section pauses, neutral tone",
+  profileStory: "Story",
+  profileStoryHint: "Longer pauses, calm delivery, keep natural silence",
+  profileApplied: "Profile applied",
+  importHint:
+    "Supports Speaker: line, [Speaker] line, Speaker — line, tabs/CSV, SRT, and chatbot bullets (- Name: text).",
 };
 
 const fa: Dict = {
@@ -188,6 +202,20 @@ const fa: Dict = {
   cancelled: "لغو شد",
   lineRegenerated: "خط بازتولید شد",
   regenerating: "در حال بازتولید خط",
+  updatingMix: "در حال به‌روزرسانی میکس با این خط…",
+  regenHint: "میکس کامل را با این خط ویرایش‌شده بازمی‌سازد (بقیه خطوط می‌مانند).",
+  lineEdited: "ویرایش‌شده",
+  playToneSample: "پخش نمونه لحن",
+  profiles: "پروفایل",
+  profilePodcast: "پادکست",
+  profilePodcastHint: "مکث کوتاه‌تر، بریدن سکوت، لحن گرم",
+  profileLecture: "سخنرانی",
+  profileLectureHint: "حالت روایت، مکث بخش معمولی، لحن خنثی",
+  profileStory: "داستان",
+  profileStoryHint: "مکث بلندتر، لحن آرام، حفظ سکوت طبیعی",
+  profileApplied: "پروفایل اعمال شد",
+  importHint:
+    "پشتیبانی از Speaker:، [Speaker]، Speaker —، تب/CSV، SRT و بولت چت‌بات (- Name: text).",
 };
 
 const de: Dict = {
@@ -282,6 +310,20 @@ const de: Dict = {
   cancelled: "Abgebrochen",
   lineRegenerated: "Zeile neu erzeugt",
   regenerating: "Zeile wird neu erzeugt",
+  updatingMix: "Mix wird mit dieser Zeile aktualisiert…",
+  regenHint: "Baut den Mix mit dieser bearbeiteten Zeile neu (andere Zeilen bleiben).",
+  lineEdited: "bearbeitet",
+  playToneSample: "Ton-Beispiel abspielen",
+  profiles: "Profile",
+  profilePodcast: "Podcast",
+  profilePodcastHint: "Kürzere Pausen, Stille kürzen, warmer Ton",
+  profileLecture: "Vortrag",
+  profileLectureHint: "Erzählmodus, normale Abschnittspausen, neutral",
+  profileStory: "Geschichte",
+  profileStoryHint: "Längere Pausen, ruhiger Ton, natürliche Stille",
+  profileApplied: "Profil angewendet",
+  importHint:
+    "Unterstützt Speaker:, [Speaker], Speaker —, Tabs/CSV, SRT und Chat-Bullets (- Name: text).",
 };
 
 const LOCALES: Record<UiLocale, Dict> = { en, fa, de };

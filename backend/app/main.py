@@ -6,10 +6,12 @@ from fastapi.staticfiles import StaticFiles
 
 from app.api import benchmark, generate, history, models, projects, voices
 from app.config import settings
+from app.services.tone_samples import samples_dir as tone_samples_dir
 from app.services.voice_samples import samples_dir
 
 settings.ensure_directories()
 samples_dir()
+tone_samples_dir()
 
 app = FastAPI(title="Dialogue Studio", version="1.2.0")
 app.add_middleware(
@@ -24,6 +26,7 @@ app.add_middleware(
 app.mount("/audio", StaticFiles(directory=settings.output_dir), name="audio")
 app.mount("/preview", StaticFiles(directory=settings.temp_dir), name="preview")
 app.mount("/voice-samples", StaticFiles(directory=samples_dir()), name="voice-samples")
+app.mount("/tone-samples", StaticFiles(directory=tone_samples_dir()), name="tone-samples")
 
 app.include_router(voices.router)
 app.include_router(models.router)

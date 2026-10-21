@@ -10,6 +10,7 @@ from app.models.schemas import PronunciationDict, PronunciationEntry, Voice
 from app.services import pronunciation as pronunciation_service
 from app.services.prefs import load_prefs
 from app.services.tone import list_tones
+from app.services.tone_samples import ensure_tone_sample, sample_url as tone_sample_url
 from app.services.voice_samples import ensure_sample, list_sample_status, sample_url
 from app.tts.factory import engine_hub
 from app.tts.languages import list_languages
@@ -88,7 +89,29 @@ def offline_status() -> dict:
 
 @router.get("/api/tones")
 def tones() -> list[dict]:
-    return list_tones()
+    return [{**item, "sample_url": tone_sample_url(item["id"])} for item in list_tones()]
+
+
+@router.post("/api/tones/{tone_id}/sample")
+def build_tone_sample(tone_id: str, force: bool = False, voice_id: str = "af_heart") -> dict:
+    prefs = load_prefs()
+    model_id = prefs.get("selected_model_id")
+    voice = voice_id or prefs.get("default_voice_id") or "af_heart"
+
+    def work() -> str:
+        path = ensure_tone_sample(tone_id, voice_id=str(voice), model_id=model_id, force=force)
+        return path.name
+
+    try:
+        name = _sample_pool.submit(work).result()
+        return {
+            "tone_id": tone_id,
+            "url": f"/tone-samples/{name}",
+            "ready": True,
+            "voice_id": voice,
+        }
+    except Exception as error:  # noqa: BLE001
+        raise fail(error)
 
 
 @router.get("/api/languages")

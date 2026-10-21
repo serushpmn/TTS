@@ -71,6 +71,16 @@ export const api = {
       `/api/audio/${encodeURIComponent(filename)}/local-path`,
     ),
   tones: () => request<ToneStyle[]>("/api/tones"),
+  toneSample: (toneId: string, voiceId?: string, force = false) => {
+    const params = new URLSearchParams();
+    if (force) params.set("force", "true");
+    if (voiceId) params.set("voice_id", voiceId);
+    const qs = params.toString();
+    return request<{ tone_id: string; url: string; ready: boolean; voice_id: string }>(
+      `/api/tones/${encodeURIComponent(toneId)}/sample${qs ? `?${qs}` : ""}`,
+      { method: "POST" },
+    );
+  },
   languages: () => request<SynthLanguage[]>("/api/languages"),
   startGenerate: (project: Project & { model_id?: string | null }) =>
     request<GenerateJob>("/api/generate", {

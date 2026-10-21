@@ -12,6 +12,7 @@ import { clearDraft, formatDuration, loadDraft, saveDraft } from "./draft";
 import { estimateDialogueSeconds } from "./estimate";
 import { isRtl, t, UI_LOCALES, type UiLocale } from "./i18n";
 import { matchPausePreset, PAUSE_PRESETS, type PausePresetId } from "./pausePresets";
+import { PROJECT_PROFILES, type ProjectProfileId } from "./projectProfiles";
 import { applyAppearance, loadMode, type ModeId } from "./themes";
 import type {
   AppMode,
@@ -210,7 +211,11 @@ export default function App() {
   const [toneId, setToneId] = useState("neutral");
   const [synthLang, setSynthLang] = useState("auto");
   const [strictCast, setStrictCast] = useState(true);
+  const [dirtyMessageIds, setDirtyMessageIds] = useState<Set<string>>(() => new Set());
+  const [regenIndex, setRegenIndex] = useState<number | null>(null);
+  const [activeProfile, setActiveProfile] = useState<ProjectProfileId | null>(null);
   const jobIdRef = useRef<string | null>(null);
+  const audioReadyRef = useRef(false);
   const pausePreset = matchPausePreset(pause, sameSpeakerPause);
   const tx = (key: string) => t(uiLocale, key);
   const tagActions = useMemo(() => ssmlActions(uiLocale), [uiLocale]);
@@ -306,8 +311,16 @@ export default function App() {
     setHistory(await api.listHistory());
   }
 
-  const updateMessage = (message: Message, patch: Partial<Message>) =>
+  const updateMessage = (message: Message, patch: Partial<Message>) => {
     setMessages((items) => items.map((item) => (item.id === message.id ? { ...item, ...patch } : item)));
+    if (audioReadyRef.current && ("text" in patch || "tone_id" in patch)) {
+      setDirtyMessageIds((prev) => {
+        const next = new Set(prev);
+        next.add(message.id);
+        return next;
+      });
+    }
+  };
 
   const move = (at: number, delta: number) =>
     setMessages((items) => {
@@ -409,6 +422,46 @@ export default function App() {
     setSectionPause(preset.section);
   }
 
+  function applyProjectProfile(profileId: ProjectProfileId) {
+    const profile = PROJECT_PROFILES.find((item) => item.id === profileId);
+    if (!profile) return;
+    setAppMode(profile.mode);
+    applyPausePreset(profile.pausePreset);
+    setTrimSilence(profile.trimSilence);
+    void api.savePrefs({ trim_silence_default: profile.trimSilence }).catch(() => undefined);
+    void persistTone(profile.toneId);
+    setActiveProfile(profile.id);
+    setStatus(`${tx("profileApplied")}: ${tx(profile.labelKey)}`);
+  }
+
+  async function playToneSample(toneSampleId: string) {
+    const conflict = deliveryConflict();
+    if (conflict) {
+      setError(conflict);
+      return;
+    }
+    try {
+      setError("");
+      const existing = tones.find((item) => item.id === toneSampleId)?.sample_url;
+      let url = existing || null;
+      if (!url) {
+        const voice =
+          appMode === "lecture"
+            ? narratorVoice
+            : speakers[0]?.voice_id || defaultVoiceId || "af_heart";
+        const result = await api.toneSample(toneSampleId, voice);
+        url = result.url;
+        setTones((items) =>
+          items.map((item) => (item.id === toneSampleId ? { ...item, sample_url: result.url } : item)),
+        );
+      }
+      new Audio(api.base + url).play();
+      void persistTone(toneSampleId);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
   async function persistFavorites(ids: string[]) {
     setFavoriteVoices(ids);
     try {
@@ -452,6 +505,9 @@ export default function App() {
     setSectionPause(project.section_pause ?? 0.85);
     if (project.model_id) setSelectedModelId(project.model_id);
     setAudioUrl(project.audio_url || undefined);
+    audioReadyRef.current = Boolean(project.audio_url);
+    setDirtyMessageIds(new Set());
+    setActiveProfile(null);
     setPanel(null);
     setStatus(`Opened “${project.name}”`);
   }
@@ -488,6 +544,10 @@ export default function App() {
     setShowHelp(false);
     setSpeakersExpanded(false);
     setActiveMessageId(null);
+    setDirtyMessageIds(new Set());
+    setRegenIndex(null);
+    setActiveProfile(null);
+    audioReadyRef.current = false;
   }
 
   async function pollJob(started: GenerateJob) {
@@ -509,6 +569,9 @@ export default function App() {
     setAudioName(latest.filename || undefined);
     setMp3Url(latest.mp3_url || undefined);
     setMp3Name(latest.mp3_filename || undefined);
+    audioReadyRef.current = Boolean(latest.url);
+    setDirtyMessageIds(new Set());
+    setRegenIndex(null);
     setStatus(tx("ready"));
     await refreshHistory();
   }
@@ -602,7 +665,8 @@ export default function App() {
     try {
       setError("");
       setBusy(true);
-      setStatus(`${tx("regenerating")} ${index + 1}…`);
+      setRegenIndex(index);
+      setStatus(`${tx("updatingMix")} (${index + 1})`);
       const result = await api.regenerateSegment({
         mode: "dialogue",
         index,
@@ -623,6 +687,12 @@ export default function App() {
       setAudioName(result.filename);
       setMp3Url(result.mp3_url);
       setMp3Name(result.mp3_filename);
+      audioReadyRef.current = true;
+      setDirtyMessageIds((prev) => {
+        const next = new Set(prev);
+        next.delete(message.id);
+        return next;
+      });
       setStatus(tx("lineRegenerated"));
       await refreshHistory();
     } catch (e) {
@@ -630,6 +700,7 @@ export default function App() {
       setStatus("");
     } finally {
       setBusy(false);
+      setRegenIndex(null);
     }
   }
 
@@ -953,21 +1024,46 @@ export default function App() {
       </header>
 
       <section className="delivery-bar" aria-label={tx("tone")}>
+        <div className="profile-row" role="group" aria-label={tx("profiles")}>
+          <span className="delivery-label">{tx("profiles")}</span>
+          {PROJECT_PROFILES.map((profile) => (
+            <button
+              key={profile.id}
+              type="button"
+              className={activeProfile === profile.id ? "active" : ""}
+              title={tx(profile.hintKey)}
+              onClick={() => applyProjectProfile(profile.id)}
+            >
+              {tx(profile.labelKey)}
+            </button>
+          ))}
+        </div>
         <div className="tone-row">
           <span className="delivery-label" title={tx("toneHint")}>
             {tx("tone")}
           </span>
           <div className="tone-chips" role="group" aria-label={tx("tone")}>
             {tones.map((tone) => (
-              <button
-                key={tone.id}
-                type="button"
-                className={toneId === tone.id ? "active" : ""}
-                title={tone.description}
-                onClick={() => void persistTone(tone.id)}
-              >
-                {tone.label}
-              </button>
+              <span key={tone.id} className={`tone-chip-wrap ${toneId === tone.id ? "active" : ""}`}>
+                <button
+                  type="button"
+                  className={toneId === tone.id ? "active" : ""}
+                  title={tone.description}
+                  onClick={() => void persistTone(tone.id)}
+                >
+                  {tone.label}
+                </button>
+                <button
+                  type="button"
+                  className="tone-sample-btn"
+                  title={tx("playToneSample")}
+                  aria-label={`${tx("playToneSample")}: ${tone.label}`}
+                  disabled={busy}
+                  onClick={() => void playToneSample(tone.id)}
+                >
+                  ▶
+                </button>
+              </span>
             ))}
           </div>
         </div>
@@ -1325,8 +1421,13 @@ export default function App() {
               const side = speakerSide.get(message.speaker_id) || "left";
               const active = activeMessageId === message.id;
               const messageTone = message.tone_id || toneId;
+              const isDirty = dirtyMessageIds.has(message.id);
+              const isRegening = regenIndex === index;
               return (
-                <article className={`bubble-row ${side} ${active ? "active" : ""}`} key={message.id}>
+                <article
+                  className={`bubble-row ${side} ${active ? "active" : ""} ${isDirty ? "needs-regen" : ""} ${isRegening ? "regen-busy" : ""}`}
+                  key={message.id}
+                >
                   <div className="bubble-stack">
                     <div className="bubble-meta">
                       <label className="bubble-speaker">
@@ -1360,6 +1461,7 @@ export default function App() {
                           </select>
                         </label>
                       )}
+                      {isDirty && <span className="edited-badge">{tx("lineEdited")}</span>}
                     </div>
                     <div className={`bubble ${side}`}>
                       <AutoTextarea
@@ -1380,11 +1482,12 @@ export default function App() {
                         </button>
                         <button
                           type="button"
-                          title={tx("regenerateLine")}
+                          className={isDirty ? "regen-needed" : ""}
+                          title={tx("regenHint")}
                           disabled={!message.text.trim() || !speaker || busy || !topic.trim()}
                           onClick={() => void regenerateMessage(message, index)}
                         >
-                          ↻
+                          {isRegening ? "…" : "↻"}
                         </button>
                         <button type="button" title={tx("moveUp")} onClick={() => move(index, -1)}>
                           ↑
@@ -1590,10 +1693,13 @@ export default function App() {
 
             {panel === "import" && (
               <form className="drawer-body" onSubmit={importConversation}>
+                <p className="muted import-hint">{tx("importHint")}</p>
                 <AutoTextarea
                   value={importText}
                   onChange={setImportText}
-                  placeholder={"Sarah: Hello\nJohn: Hi there"}
+                  placeholder={
+                    "Sarah: Hello\nJohn: Hi there\n\n# or SRT / CSV / [Sarah] Hello / - Alex: Hey"
+                  }
                 />
                 <button type="submit" className="primary" disabled={busy || !importText.trim()}>
                   Parse into chat
@@ -1628,6 +1734,8 @@ export default function App() {
                           setMp3Url(item.mp3_url || undefined);
                           setMp3Name(item.mp3_filename || undefined);
                           setTopic(item.topic);
+                          audioReadyRef.current = true;
+                          setDirtyMessageIds(new Set());
                           setPanel(null);
                         }}
                       >

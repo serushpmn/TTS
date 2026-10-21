@@ -43,6 +43,7 @@ export type ToneStyle = {
   prefix_tags: string;
   speed_rate: number;
   native_emotion: boolean;
+  sample_url?: string | null;
 };
 export type SynthLanguage = {
   id: string;

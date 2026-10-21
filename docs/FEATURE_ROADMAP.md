@@ -63,10 +63,10 @@
 
 | ID | مورد | جزئیات | وضعیت |
 |----|------|--------|--------|
-| `tone-samples` | نمونه کوتاه هر لحن | یک کلیپ کوتاه از پیش‌ساخته یا on-demand تا کاربر قبل از Generate فرق Calm / Excited را بشنود | pending |
-| `smart-line-regen` | ویرایش بعد از Generate | عوض کردن یک خط و بازتولید/چسباندن همان بخش بدون حس «کل پروژه از نو»؛ UX واضح‌تر روی ↻ موجود | pending |
-| `project-profiles` | پروفایل پروژه | دکمه‌هایی مثل Podcast / Lecture / Story که pause + trim + tone پیش‌فرض را یک‌جا ست کنند | pending |
-| `smarter-import` | Import بهتر | پشتیبانی از جدول ساده، SRT، یا چسباندن از چت‌بات با تشخیص خودکار نام گوینده | pending |
+| `tone-samples` | نمونه کوتاه هر لحن | یک کلیپ کوتاه از پیش‌ساخته یا on-demand تا کاربر قبل از Generate فرق Calm / Excited را بشنود | **done** (`POST /api/tones/{id}/sample` + ▶ روی چیپ لحن) |
+| `smart-line-regen` | ویرایش بعد از Generate | عوض کردن یک خط و بازتولید/چسباندن همان بخش بدون حس «کل پروژه از نو»؛ UX واضح‌تر روی ↻ موجود | **done** (نشان edited، وضعیت Updating mix، عنوان راهنما روی ↻) |
+| `project-profiles` | پروفایل پروژه | دکمه‌هایی مثل Podcast / Lecture / Story که pause + trim + tone پیش‌فرض را یک‌جا ست کنند | **done** |
+| `smarter-import` | Import بهتر | پشتیبانی از جدول ساده، SRT، یا چسباندن از چت‌بات با تشخیص خودکار نام گوینده | **done** (colon / bracket / dash / TSV / CSV / SRT / bullets) |
 
 ---
 
@@ -104,9 +104,9 @@
 
 **انجام‌شده (ادامه):**
 8. قانون gender mix اختیاری + Preview با tone/lang + هشدار مدل/زبان + Export UX  
+9. نمونه لحن‌ها + پروفایل پروژه + Import بهتر + بهبود regen یک خط  
 
 **بعدی (پیشنهادی):**
-9. نمونه لحن‌ها + پروفایل پروژه + Import بهتر + بهبود regen یک خط  
 10. i18n کامل پنل‌ها + نوار Delivery جمع‌شونده + جستجو + میانبرها  
 11. موتور/صداهای غیرانگلیسی واقعی‌تر + صف batch (بلندمدت)
 
