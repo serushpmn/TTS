@@ -151,13 +151,17 @@ TTS/
 ├── Start.bat / Setup.bat
 ├── package.json              # npm run setup | npm run dev
 ├── scripts/                  # setup + dev launchers
-├── docs/                     # audit + implementation plan
+├── docs/                     # audit, implementation plan, feature roadmap
 ├── backend/                  # FastAPI + Kokoro (Torch / ONNX)
 ├── frontend/                 # Vite + React + TypeScript
 ├── output/                   # generated audio
 ├── temp/                     # cache / previews / benchmark samples
 └── data/                     # history, projects, prefs, models/, voices/
 ```
+
+### Planned features (staged)
+
+See [`docs/FEATURE_ROADMAP.md`](docs/FEATURE_ROADMAP.md) for the backlog (pronunciation dictionary, emotion/tone chips, synth language, UI i18n fa/en/de, pause presets + silence trim, pre-baked voice samples, avatars, filters, compare, favorites, default voice).
 
 ---
 
@@ -230,7 +234,9 @@ $env:PYTHONPATH=(Get-Location)   # PowerShell
 | Kokoro fails on 3.13/3.14 | Recreate venv with Python **≤ 3.12** |
 | ONNX load crashes / empty | App disables ORT graph opts; update `onnxruntime` / re-download model |
 | Selected ONNX missing | Models panel → Download (and voice pack) — no silent fallback |
-| UI can’t reach API | Backend on **8000**, frontend on **5173**, both on localhost |
+| UI shows **Failed to fetch** | Backend is not running. Check the terminal for startup errors, then rerun `npm run dev` (or `Start.bat`). API must answer at `http://127.0.0.1:8000/api/health`. |
+| `'D:\Cursor' is not recognized` / setup or backend exits immediately | Folder path contains spaces (e.g. `Cursor Projects`). Use current `scripts/dev.mjs` / `scripts/setup.mjs` (they spawn `.exe` without broken Windows shell quoting). Pull latest scripts, then `npm run setup` / `npm run dev` again. |
+| UI can’t reach API | Backend on **8000**, frontend on **5173**, both on localhost (`127.0.0.1`) |
 | Slow first Torch generate | Normal; later turns reuse cache. Try ONNX `model_q8f16` |
 
 ---

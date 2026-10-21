@@ -1,0 +1,11 @@
+---
+description: After every code change, update README and suggest a short commit message
+alwaysApply: true
+---
+
+# README + commit message after changes
+
+After completing any substantive change to this project:
+
+1. **Update `README.md`** so it matches real behavior (setup, run, models, troubleshooting, scripts). Do not leave the README describing outdated commands or known bugs that were fixed.
+2. **Suggest a short commit message** (1–2 sentences, imperative mood, focus on why). Do **not** create the git commit unless the user explicitly asks to commit.
