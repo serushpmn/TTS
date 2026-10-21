@@ -54,11 +54,22 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ text }),
     }),
-  preview: (text: string, voice_id: string, speed: number, model_id?: string | null) =>
+  preview: (payload: {
+    text: string;
+    voice_id: string;
+    speed: number;
+    model_id?: string | null;
+    tone_id?: string | null;
+    synth_lang?: string | null;
+  }) =>
     request<{ url: string }>("/api/preview", {
       method: "POST",
-      body: JSON.stringify({ text, voice_id, speed, model_id }),
+      body: JSON.stringify(payload),
     }),
+  audioLocalPath: (filename: string) =>
+    request<{ path: string; filename: string }>(
+      `/api/audio/${encodeURIComponent(filename)}/local-path`,
+    ),
   tones: () => request<ToneStyle[]>("/api/tones"),
   languages: () => request<SynthLanguage[]>("/api/languages"),
   startGenerate: (project: Project & { model_id?: string | null }) =>

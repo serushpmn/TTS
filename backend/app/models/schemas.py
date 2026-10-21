@@ -79,6 +79,8 @@ class PreviewRequest(BaseModel):
     voice_id: str
     speed: float = Field(default=1.0, ge=0.5, le=2.0)
     model_id: str | None = None
+    tone_id: str | None = None
+    synth_lang: str | None = "auto"
 
 
 class SegmentRegenRequest(BaseModel):
@@ -141,6 +143,7 @@ class PrefsUpdate(BaseModel):
     favorite_voices: list[str] | None = None
     default_voice_id: str | None = None
     trim_silence_default: bool | None = None
+    strict_cast: bool | None = None
     ui_locale: str | None = None
     synth_lang: str | None = None
     default_tone_id: str | None = None

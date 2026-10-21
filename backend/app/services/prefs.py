@@ -22,6 +22,7 @@ def _defaults() -> dict:
         "favorite_voices": [],
         "default_voice_id": "af_heart",
         "trim_silence_default": False,
+        "strict_cast": True,
         "ui_locale": "en",
         "synth_lang": "auto",
         "default_tone_id": "neutral",
@@ -53,6 +54,7 @@ def _read_unlocked() -> dict:
         default_voice = "af_heart"
     merged["default_voice_id"] = default_voice
     merged["trim_silence_default"] = bool(merged.get("trim_silence_default", False))
+    merged["strict_cast"] = bool(merged.get("strict_cast", True))
     locale = str(merged.get("ui_locale") or "en").lower()
     if locale not in ("en", "fa", "de"):
         locale = "en"
@@ -101,6 +103,8 @@ def save_prefs(patch: dict) -> dict:
             current["default_voice_id"] = voice_id
         if "trim_silence_default" in patch and patch["trim_silence_default"] is not None:
             current["trim_silence_default"] = bool(patch["trim_silence_default"])
+        if "strict_cast" in patch and patch["strict_cast"] is not None:
+            current["strict_cast"] = bool(patch["strict_cast"])
         if "ui_locale" in patch and patch["ui_locale"] is not None:
             locale = str(patch["ui_locale"]).lower()
             if locale not in ("en", "fa", "de"):
@@ -119,6 +123,7 @@ def save_prefs(patch: dict) -> dict:
                 "favorite_voices",
                 "default_voice_id",
                 "trim_silence_default",
+                "strict_cast",
                 "ui_locale",
                 "synth_lang",
                 "default_tone_id",

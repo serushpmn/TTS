@@ -23,8 +23,9 @@ export function allowedGendersFor(
   speakerId: string,
   speakers: Speaker[],
   voices: Voice[],
+  strictCast = true,
 ): Array<"Female" | "Male"> {
-  if (speakers.length < 2) return ["Female", "Male"];
+  if (!strictCast || speakers.length < 2) return ["Female", "Male"];
   const others = speakers.filter((speaker) => speaker.id !== speakerId);
   const otherGenders = new Set(others.map((speaker) => genderOf(speaker.voice_id, voices)));
   if (!otherGenders.has("Female")) return ["Female"];
@@ -42,8 +43,9 @@ export function randomVoiceForSpeaker(
   speakerId: string,
   speakers: Speaker[],
   voices: Voice[],
+  strictCast = true,
 ): Voice | null {
-  const allowed = allowedGendersFor(speakerId, speakers, voices);
+  const allowed = allowedGendersFor(speakerId, speakers, voices, strictCast);
   const pool = voices.filter((voice) => allowed.includes(voice.gender as "Female" | "Male"));
   if (!pool.length) return null;
   const current = speakers.find((speaker) => speaker.id === speakerId)?.voice_id;

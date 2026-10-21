@@ -7,6 +7,7 @@ import { ModelPanel } from "./components/ModelPanel";
 import { ProjectsPanel } from "./components/ProjectsPanel";
 import { PronunciationPanel } from "./components/PronunciationPanel";
 import { VoicePicker } from "./components/VoicePicker";
+import { engineLangConflict, exportBasename, filenameFromUrl } from "./delivery";
 import { clearDraft, formatDuration, loadDraft, saveDraft } from "./draft";
 import { estimateDialogueSeconds } from "./estimate";
 import { isRtl, t, UI_LOCALES, type UiLocale } from "./i18n";
@@ -208,6 +209,7 @@ export default function App() {
   const [uiLocale, setUiLocale] = useState<UiLocale>("en");
   const [toneId, setToneId] = useState("neutral");
   const [synthLang, setSynthLang] = useState("auto");
+  const [strictCast, setStrictCast] = useState(true);
   const jobIdRef = useRef<string | null>(null);
   const pausePreset = matchPausePreset(pause, sameSpeakerPause);
   const tx = (key: string) => t(uiLocale, key);
@@ -252,6 +254,7 @@ export default function App() {
         setFavoriteVoices(prefs.favorite_voices || []);
         setDefaultVoiceId(prefs.default_voice_id || "af_heart");
         setTrimSilence(Boolean(prefs.trim_silence_default));
+        setStrictCast(prefs.strict_cast !== false);
         setUiLocale(normalizeLocale(prefs.ui_locale));
         setSynthLang(prefs.synth_lang || "auto");
         setToneId(prefs.default_tone_id || "neutral");
@@ -360,6 +363,39 @@ export default function App() {
     setSynthLang(next);
     try {
       await api.savePrefs({ synth_lang: next });
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  async function persistStrictCast(next: boolean) {
+    setStrictCast(next);
+    try {
+      await api.savePrefs({ strict_cast: next });
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  function deliveryConflict(): string | null {
+    return engineLangConflict(selectedModelId, synthLang, languages);
+  }
+
+  async function copyText(value: string, okKey: string) {
+    try {
+      await navigator.clipboard.writeText(value);
+      setStatus(tx(okKey));
+    } catch {
+      setError("Clipboard unavailable");
+    }
+  }
+
+  async function copyAudioPath(url: string | undefined) {
+    const name = filenameFromUrl(url);
+    if (!name) return;
+    try {
+      const result = await api.audioLocalPath(name);
+      await copyText(result.path, "pathCopied");
     } catch (e) {
       setError((e as Error).message);
     }
@@ -517,7 +553,7 @@ export default function App() {
       setError(tx("keepOneSpeaker"));
       return;
     }
-    if (!hasMixedGenders(remaining, voices)) {
+    if (strictCast && !hasMixedGenders(remaining, voices)) {
       setError(tx("cannotRemoveSpeaker"));
       return;
     }
@@ -530,11 +566,23 @@ export default function App() {
     );
   }
 
-  async function preview(text: string, speaker: Speaker) {
+  async function preview(text: string, speaker: Speaker, messageTone?: string | null) {
+    const conflict = deliveryConflict();
+    if (conflict) {
+      setError(conflict);
+      return;
+    }
     try {
       setError("");
       setBusy(true);
-      const result = await api.preview(text, speaker.voice_id, speaker.speed, selectedModelId);
+      const result = await api.preview({
+        text,
+        voice_id: speaker.voice_id,
+        speed: speaker.speed,
+        model_id: selectedModelId,
+        tone_id: messageTone || toneId,
+        synth_lang: synthLang,
+      });
       new Audio(api.base + result.url).play();
     } catch (e) {
       setError((e as Error).message);
@@ -546,6 +594,11 @@ export default function App() {
   async function regenerateMessage(message: Message, index: number) {
     const speaker = speakerById.get(message.speaker_id);
     if (!speaker || !message.text.trim()) return;
+    const conflict = deliveryConflict();
+    if (conflict) {
+      setError(conflict);
+      return;
+    }
     try {
       setError("");
       setBusy(true);
@@ -585,6 +638,11 @@ export default function App() {
       setError(tx("enterTopic"));
       return;
     }
+    const conflict = deliveryConflict();
+    if (conflict) {
+      setError(conflict);
+      return;
+    }
     if (appMode === "lecture") {
       if (!lectureText.trim()) {
         setError(tx("pasteLectureFirst"));
@@ -620,7 +678,7 @@ export default function App() {
       setError(tx("fillTurns"));
       return;
     }
-    if (!hasMixedGenders(speakers, voices)) {
+    if (strictCast && !hasMixedGenders(speakers, voices)) {
       setError(tx("mixGenders"));
       return;
     }
@@ -680,8 +738,8 @@ export default function App() {
     const next = speakers.map((speaker) =>
       speaker.id === speakerId ? { ...speaker, voice_id: voiceId } : speaker,
     );
-    if (!hasMixedGenders(next, voices)) {
-      setError("Speakers must mix female and male voices.");
+    if (strictCast && !hasMixedGenders(next, voices)) {
+      setError(tx("mixGenders"));
       return;
     }
     setError("");
@@ -689,9 +747,9 @@ export default function App() {
   }
 
   function randomizeOne(speakerId: string) {
-    const voice = randomVoiceForSpeaker(speakerId, speakers, voices);
+    const voice = randomVoiceForSpeaker(speakerId, speakers, voices, strictCast);
     if (!voice) {
-      setError("No alternate voice available while keeping a mixed cast.");
+      setError(strictCast ? "No alternate voice available while keeping a mixed cast." : "No alternate voice.");
       return;
     }
     changeSpeakerVoice(speakerId, voice.id);
@@ -703,7 +761,7 @@ export default function App() {
       return;
     }
     const next = randomizeSpeakerVoices(speakers, voices);
-    if (!hasMixedGenders(next, voices)) {
+    if (strictCast && !hasMixedGenders(next, voices)) {
       setError("Could not build a mixed female/male cast.");
       return;
     }
@@ -924,6 +982,14 @@ export default function App() {
             ))}
           </select>
         </label>
+        {(() => {
+          const warn = deliveryConflict();
+          return warn ? (
+            <p className="delivery-warn" role="status">
+              {warn}
+            </p>
+          ) : null;
+        })()}
       </section>
 
       {appMode === "dialogue" ? (
@@ -978,6 +1044,14 @@ export default function App() {
                 }}
               />
               {tx("trimSilence")}
+            </label>
+            <label className="check-inline" title={tx("strictCastHint")}>
+              <input
+                type="checkbox"
+                checked={strictCast}
+                onChange={(e) => void persistStrictCast(e.target.checked)}
+              />
+              {tx("strictCast")}
             </label>
             {!speakersCompact && (
               <>
@@ -1300,7 +1374,7 @@ export default function App() {
                           type="button"
                           title={tx("preview")}
                           disabled={!message.text.trim() || !speaker || busy}
-                          onClick={() => speaker && preview(message.text, speaker)}
+                          onClick={() => speaker && preview(message.text, speaker, message.tone_id || toneId)}
                         >
                           ▶
                         </button>
@@ -1443,20 +1517,47 @@ export default function App() {
                 }}
               />
               <div className="download-row">
-                <a className="primary download" href={api.base + audioUrl} download={audioName || "conversation.wav"}>
+                <a
+                  className="primary download"
+                  href={api.base + audioUrl}
+                  download={`${exportBasename(topic || audioName || "conversation")}.wav`}
+                  title={tx("downloadWav")}
+                >
                   WAV
                 </a>
                 {mp3Url && (
-                  <a className="primary download" href={api.base + mp3Url} download={mp3Name || "conversation.mp3"}>
+                  <a
+                    className="primary download"
+                    href={api.base + mp3Url}
+                    download={`${exportBasename(topic || mp3Name || "conversation")}.mp3`}
+                    title={tx("downloadMp3")}
+                  >
                     MP3
                   </a>
+                )}
+              </div>
+              <div className="export-actions">
+                <button type="button" className="quiet-btn" onClick={() => void copyAudioPath(audioUrl)}>
+                  {tx("copyPath")}
+                </button>
+                <button
+                  type="button"
+                  className="quiet-btn"
+                  onClick={() => void copyText(api.base + audioUrl, "urlCopied")}
+                >
+                  {tx("copyUrl")}
+                </button>
+                {mp3Url && (
+                  <button type="button" className="quiet-btn" onClick={() => void copyAudioPath(mp3Url)}>
+                    {tx("copyPath")} MP3
+                  </button>
                 )}
               </div>
             </section>
           ) : (
             <section className="panel empty-side">
               <div className="audio-sphere" aria-hidden="true" />
-              <p>Generate to get WAV + MP3 here.</p>
+              <p>{tx("generateEmpty")}</p>
               <p className="muted shortcut-hint">Ctrl+Enter · Esc to cancel</p>
               <p className="muted">Model: {selectedModelId}</p>
             </section>
@@ -1583,9 +1684,9 @@ export default function App() {
                   onError={setError}
                   onStatus={setStatus}
                   allowedGenders={
-                    voiceTarget === "narrator"
+                    voiceTarget === "narrator" || !strictCast
                       ? undefined
-                      : allowedGendersFor(voiceTarget, speakers, voices)
+                      : allowedGendersFor(voiceTarget, speakers, voices, strictCast)
                   }
                 />
               </div>

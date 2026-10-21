@@ -160,6 +160,7 @@ export type AppPrefs = {
   favorite_voices: string[];
   default_voice_id: string;
   trim_silence_default: boolean;
+  strict_cast?: boolean;
   ui_locale?: string;
   synth_lang?: string;
   default_tone_id?: string;

@@ -1164,6 +1164,21 @@ html[data-mode="night"] .offline-banner.ok { background: #1e3320; }
 .synth-lang-field {
   margin-inline-start: auto;
 }
+.delivery-warn {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: 12px;
+  color: var(--danger);
+}
+.export-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.export-actions .quiet-btn {
+  font-size: 12px;
+}
 .bubble-meta {
   display: flex;
   flex-wrap: wrap;

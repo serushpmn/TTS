@@ -58,7 +58,7 @@ Stop with `Ctrl+C`.
 ### Dialogue mode
 1. Choose **Dialogue**.
 2. Enter a **topic** (output filename).
-3. Set **speakers** and voices (must mix female + male).
+3. Set **speakers** and voices. By default casts must mix female + male; uncheck **Require mixed genders** to allow same-gender casts.
 4. Type the chat, or **Import** `Speaker: line` text.
 5. Optional **tone chips** (Calm, Excited, …) — map to speed/pause only; Kokoro has no native emotion.
 6. Optional tags: `[pause]`, `[pause:1.5s]`, `[laugh]`, `[sigh]`, `[slow]`, `[fast]`…  
@@ -168,7 +168,9 @@ TTS/
 
 See [`docs/FEATURE_ROADMAP.md`](docs/FEATURE_ROADMAP.md).
 
-**Shipped (roadmap stages 1–7):** pause presets + per-project pauses; trim silence; Voices panel (samples, filters, avatars, compare, favorites, default); pronunciation dictionary; **tone chips** (speed/pause approximations); **speech language** (Auto/EN + experimental DE/ES/FR/IT on Torch); **UI i18n** EN/FA/DE.
+**Shipped (roadmap stages 1–5):** pause presets + per-project pauses; trim silence; Voices panel (samples, filters, avatars, compare, favorites, default); pronunciation dictionary; **tone chips**; **speech language**; **UI i18n** EN/FA/DE; optional **strict cast** (mixed genders); preview with tone/lang; engine↔language guard before generate; export copy path/URL + Topic+date download names.
+
+**Next (stages 6–8 in roadmap):** tone samples; project profiles; smarter import; full panel i18n; collapsible delivery bar; history/project search; honest non-EN voices / batch queue (long-term).
 
 Bake all voice samples once (uses the selected model):
 

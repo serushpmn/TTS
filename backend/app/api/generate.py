@@ -21,8 +21,10 @@ from app.services.history import add_history
 from app.services.jobs import jobs
 from app.services.lecture import split_lecture_text
 from app.services.parser import parse_conversation
+from app.config import settings
 from app.services.prefs import selected_model_id
 from app.services.synthesis import synthesize_turn, unique_output_path
+from app.tts.compat import assert_model_supports_synth_lang
 from app.tts.factory import engine_hub
 from app.tts.model_manager import model_manager
 
@@ -41,11 +43,23 @@ def parse(payload: dict[str, str]):
 @router.post("/api/preview")
 def preview(request: PreviewRequest) -> dict[str, str]:
     model_id = request.model_id or selected_model_id()
+    try:
+        assert_model_supports_synth_lang(model_id, request.synth_lang)
+    except ValueError as error:
+        raise fail(error)
 
     def work() -> str:
         model_manager.ensure_assets_for(model_id)
         engine = engine_hub.get(model_id)
-        path = synthesize_turn(request.text, request.voice_id, request.speed, engine=engine, model_id=model_id)
+        path = synthesize_turn(
+            request.text,
+            request.voice_id,
+            request.speed,
+            engine=engine,
+            model_id=model_id,
+            tone_id=request.tone_id,
+            synth_lang=request.synth_lang,
+        )
         return path.name
 
     try:
@@ -58,6 +72,10 @@ def preview(request: PreviewRequest) -> dict[str, str]:
 @router.post("/api/generate")
 def generate(request: ConversationRequest) -> dict:
     model_id = request.model_id or selected_model_id()
+    try:
+        assert_model_supports_synth_lang(model_id, request.synth_lang)
+    except ValueError as error:
+        raise fail(error)
     job = jobs.create(total=len(request.messages), model_id=model_id)
     Thread(target=run_generation, args=(job.id, request), daemon=True).start()
     return job.to_dict()
@@ -95,9 +113,23 @@ def lecture(request: LectureRequest) -> dict:
     except ValueError as error:
         raise fail(error)
     model_id = request.model_id or selected_model_id()
+    try:
+        assert_model_supports_synth_lang(model_id, request.synth_lang)
+    except ValueError as error:
+        raise fail(error)
     job = jobs.create(total=len(chunks), model_id=model_id)
     Thread(target=run_lecture, args=(job.id, request), daemon=True).start()
     return job.to_dict()
+
+
+@router.get("/api/audio/{filename}/local-path")
+def audio_local_path(filename: str) -> dict[str, str]:
+    safe = Path(filename).name
+    path = (settings.output_dir / safe).resolve()
+    root = settings.output_dir.resolve()
+    if path.parent != root or not path.exists() or not path.is_file():
+        raise HTTPException(status_code=404, detail="Audio file not found.")
+    return {"path": str(path), "filename": safe}
 
 
 @router.get("/api/generate/{job_id}")
@@ -121,6 +153,7 @@ def regenerate_segment(request: SegmentRegenRequest) -> dict:
     """Regenerate one dialogue line or lecture section and rebuild the final file."""
     model_id = request.model_id or selected_model_id()
     try:
+        assert_model_supports_synth_lang(model_id, request.synth_lang)
         model_manager.ensure_assets_for(model_id)
         engine = engine_hub.get(model_id)
         segments: list[tuple[Path, float]] = []
