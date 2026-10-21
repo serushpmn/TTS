@@ -8,4 +8,8 @@ output/*
 temp/*
 !temp/.gitkeep
 data/*.json
+data/models/
+data/voices/
+data/benchmarks/
 .env
+backend/_probe.txt

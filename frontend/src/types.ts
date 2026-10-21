@@ -9,10 +9,19 @@ export type Project = {
   id: string;
   name: string;
   topic: string;
+  mode?: "dialogue" | "lecture";
   speakers: Speaker[];
   messages: Message[];
   speaker_change_pause: number;
+  same_speaker_pause?: number;
+  lecture_text?: string;
+  narrator_voice?: string;
+  narrator_speed?: number;
+  section_pause?: number;
+  model_id?: string | null;
   audio_url?: string;
+  created_at?: string | null;
+  updated_at?: string | null;
 };
 export type HistoryItem = {
   id: string;
@@ -22,6 +31,7 @@ export type HistoryItem = {
   mp3_filename?: string | null;
   mp3_url?: string | null;
   messages: number;
+  model_id?: string | null;
   created_at: string;
 };
 export type LecturePlan = { chunks: string[]; count: number; characters: number; estimated_seconds?: number };
@@ -31,10 +41,12 @@ export type LectureRequest = {
   voice_id: string;
   speed: number;
   section_pause: number;
+  model_id?: string | null;
 };
 export type GenerateJob = {
   id: string;
   status: "queued" | "running" | "done" | "error" | "cancelled";
+  status_detail?: string;
   stage: string;
   current: number;
   total: number;
@@ -45,6 +57,68 @@ export type GenerateJob = {
   mp3_url?: string | null;
   mp3_filename?: string | null;
   history_id?: string | null;
+  model_id?: string | null;
   error?: string | null;
+};
+export type ModelInfo = {
+  id: string;
+  filename: string;
+  precision: string;
+  approx_bytes: number;
+  approx_size_label: string;
+  description: string;
+  recommended: boolean;
+  runtime: string;
+  installed: boolean;
+  loaded: boolean;
+  selected: boolean;
+  local_bytes: number | null;
+  integrity: string;
+  voices_required: boolean;
+  voices_installed: boolean;
+  compatible: boolean;
+  compatibility_note: string;
+};
+export type DownloadJob = {
+  id: string;
+  target: string;
+  status: string;
+  progress: number;
+  bytes_downloaded: number;
+  bytes_total: number | null;
+  error: string | null;
+};
+export type OfflineStatus = {
+  selected_model_id: string;
+  runtime: string;
+  model_installed: boolean;
+  voices_installed: boolean;
+  offline_ready: boolean;
+  loaded_model_id: string | null;
+  disk_usage_bytes: number;
+  note: string;
+};
+export type BenchmarkResult = {
+  id: string;
+  created_at: string;
+  text: string;
+  voice_id: string;
+  speed: number;
+  results: Array<{
+    model_id: string;
+    measured: boolean;
+    error: string | null;
+    precision?: string;
+    disk_bytes?: number | null;
+    load_seconds?: number;
+    first_generation_seconds?: number;
+    warm_generation_seconds?: number;
+    audio_duration_seconds?: number;
+    total_generation_seconds?: number;
+    realtime_factor?: number | null;
+    peak_memory_mb?: number | null;
+    sample_url?: string | null;
+  }>;
+  notes: string[];
 };
 export type AppMode = "dialogue" | "lecture";

@@ -1,9 +1,9 @@
 # Dialogue Studio
 
-Local multi-speaker dialogue TTS in your browser.  
-Write a conversation → generate one audio file (WAV + MP3) → download.
+Local multi-speaker dialogue and lecture TTS in your browser.  
+Write a conversation or lecture → generate one audio file (WAV + MP3) → download.
 
-Powered by [Kokoro-82M](https://github.com/hexgrad/kokoro).  
+Powered by [Kokoro-82M](https://github.com/hexgrad/kokoro) (PyTorch) and selectable [ONNX quantizations](https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX).  
 **No API key. No cloud account. No paid service.** Everything runs on your machine.
 
 ---
@@ -16,10 +16,10 @@ Powered by [Kokoro-82M](https://github.com/hexgrad/kokoro).
 |------|---------|--------|
 | **Python** | **3.10–3.12** | **3.12 recommended.** Python 3.13/3.14 will not work with Kokoro. |
 | **Node.js** | 20+ | Includes `npm` |
-| **Disk** | ~1 GB | Packages + first model download |
-| **Internet** | First run only | Model/voice packs download once, then work offline |
+| **Disk** | ~1 GB+ | Packages + optional ONNX models (86–326 MB each) |
+| **Internet** | First setup / downloads only | After models & voices are local, the app works offline |
 
-GPU is optional. CPU is fine.
+GPU is optional. CPU is fine. ONNX Runtime uses CPU by default in this build.
 
 ### 2. Clone
 
@@ -34,96 +34,85 @@ cd TTS
 npm run setup
 ```
 
-This creates `backend/.venv`, installs Python deps, and installs the frontend packages.
+Creates `backend/.venv`, installs Python deps (including `onnxruntime` + `kokoro-onnx`), and installs frontend packages.
 
-**Windows alternative:** double-click `Setup.bat`.
+**Windows:** double-click `Setup.bat`.
 
-### 4. Run the app
+### 4. Run
 
 ```bash
 npm run dev
 ```
 
-That starts:
+- Backend API → `http://127.0.0.1:8000` (localhost only)
+- Frontend UI → `http://127.0.0.1:5173`
 
-- Backend API → `http://localhost:8000`
-- Frontend UI → `http://localhost:5173` (opens in your browser)
+**Windows:** double-click `Start.bat`.
 
-Stop both with `Ctrl+C`.
-
-**Windows alternative:** double-click `Start.bat`.
+Stop with `Ctrl+C`.
 
 ---
 
 ## How to use
 
 ### Dialogue mode
-1. Choose **Dialogue** in the top mode switch.
-2. Enter a **topic** (becomes the output filename).
+1. Choose **Dialogue**.
+2. Enter a **topic** (output filename).
 3. Set **speakers** and voices (must mix female + male).
-4. Type the chat, or import `Speaker: line` text with the import icon.
-5. Optional tags in dialogue: `[pause]`, `[pause:1.5s]`, `[laugh]`, `[sigh]`, …
-6. Click **Generate**, then download **WAV** / **MP3**.
+4. Type the chat, or **Import** `Speaker: line` text.
+5. Optional tags: `[pause]`, `[pause:1.5s]`, `[laugh]`, `[sigh]`, `[slow]`, `[fast]`…  
+   Laugh/sigh are **spoken approximations**, not recorded sound effects.
+6. Open **Models** to pick PyTorch or an ONNX variant (download on demand).
+7. **Generate**, then download **WAV** / **MP3**. Use **↻** on a bubble to regenerate one line.
 
 ### Lecture mode
 1. Choose **Lecture**.
-2. Pick one **narrator** voice and optional section pause.
-3. Paste a long script (presentation notes, article, talk).
-4. Blank lines become natural sections; long paragraphs are auto-split.
-5. Click **Generate** — progress shows each section, then WAV + MP3 are ready.
+2. Pick a narrator voice and section pause.
+3. Paste a long script. Blank lines become sections; long paragraphs auto-split.
+4. **Generate** — progress shows each section, then WAV + MP3.
 
-Header actions (labeled):
+### Header tools
 
 | Control | Action |
 |---------|--------|
-| Night / Day | Toggle appearance |
-| Guide | Expression tags help |
-| Import | Paste `Speaker: line` dialogue (Dialogue mode) |
+| Night / Day | Appearance |
+| Guide | Short help |
+| Import | Paste dialogue script |
 | History | Open / download / delete past exports |
+| Models | Select / download / load / delete ONNX models; benchmark |
+| Projects | Save / open / rename / duplicate / delete projects |
 | Reset | Clear workspace |
-| Generate audio | Start synthesis |
+| Generate audio | Start synthesis (Esc cancels) |
 
 ---
 
-## Manual setup (if you prefer)
+## Inference models
 
-### Backend
+### Engines
 
-```bash
-cd backend
-# Windows:
-py -3.12 -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
-.\.venv\Scripts\python.exe -m uvicorn app.main:app --reload --port 8000
+| ID | Runtime | Notes |
+|----|---------|--------|
+| `kokoro-torch` | PyTorch `kokoro` | Default until you install ONNX. Voice packs download on first use. |
+| `model_q8f16` (recommended ONNX) | ONNX Runtime | ~86 MB. Verified on Windows CPU with ORT graph opts disabled. |
+| Other ONNX files | ONNX Runtime | Download only what you need from the Models panel. |
 
-# macOS / Linux:
-python3.12 -m venv .venv
-./.venv/bin/python -m pip install -r requirements.txt
-./.venv/bin/python -m uvicorn app.main:app --reload --port 8000
-```
+ONNX source: [`onnx-community/Kokoro-82M-v1.0-ONNX`](https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX) (Apache-2.0).  
+Shared voice pack: `voices-v1.0.bin` from [kokoro-onnx releases](https://github.com/thewh1teagle/kokoro-onnx/releases).
 
-### Frontend (second terminal)
+| Model ID | Approx. size | Precision |
+|----------|-------------:|-----------|
+| `model` | 326 MB | FP32 |
+| `model_q4` | 305 MB | 4-bit matmul |
+| `model_uint8` | 177 MB | UINT8 / mixed |
+| `model_fp16` | 163 MB | FP16 |
+| `model_q4f16` | 154 MB | Q4 + FP16 |
+| `model_uint8f16` | 114 MB | UINT8 + FP16 |
+| `model_quantized` | 92.4 MB | INT8 |
+| `model_q8f16` | 86 MB | Q8 + FP16 (**recommended ONNX**) |
 
-```bash
-cd frontend
-npm install
-npm run dev
-```
+The app **never silently substitutes** another model. If the selected model is missing, generation fails with a clear download/recovery path (use Models, or select `kokoro-torch`).
 
-> On Windows PowerShell, if `npm` is blocked, use `npm.cmd` instead.
-
----
-
-## Features
-
-- **Dialogue** — multi-speaker chat UI (left / right bubbles)
-- **Lecture** — long-form single-narrator presentations (auto section split)
-- Random voices with **required female + male mix** (Dialogue)
-- Progress bar + ETA while generating
-- WAV **and** MP3 export (no FFmpeg required)
-- Local history (open / download / delete)
-- Day / night appearance (Design.md studio notebook look)
-- Expression tags: pause, laugh, sigh, breath, …
+**Offline:** once the selected model (and ONNX voice pack, if needed) is installed, editing, synthesis, playback, export, and history work without network access.
 
 ---
 
@@ -147,9 +136,11 @@ DEFAULT_VOICE=af_heart
 DEFAULT_SPEED=1.0
 SPEAKER_CHANGE_PAUSE=2.5
 KOKORO_DEVICE=auto
+API_HOST=127.0.0.1
+API_PORT=8000
 ```
 
-`KOKORO_DEVICE=auto` lets PyTorch pick CPU/GPU. You can set `cpu` or `cuda` explicitly.
+`API_HOST=127.0.0.1` keeps the API on loopback. Do not set `0.0.0.0` unless you intentionally expose the LAN.
 
 ---
 
@@ -157,15 +148,47 @@ KOKORO_DEVICE=auto
 
 ```text
 TTS/
-├── Start.bat / Setup.bat   # Windows one-click helpers
-├── package.json            # npm run setup | npm run dev
-├── scripts/                # setup + dev launchers
-├── backend/                # FastAPI + Kokoro
-├── frontend/               # Vite + React UI
-├── output/                 # generated audio
-├── temp/                   # cache / previews
-└── data/                   # local history JSON
+├── Start.bat / Setup.bat
+├── package.json              # npm run setup | npm run dev
+├── scripts/                  # setup + dev launchers
+├── docs/                     # audit + implementation plan
+├── backend/                  # FastAPI + Kokoro (Torch / ONNX)
+├── frontend/                 # Vite + React + TypeScript
+├── output/                   # generated audio
+├── temp/                     # cache / previews / benchmark samples
+└── data/                     # history, projects, prefs, models/, voices/
 ```
+
+---
+
+## Manual setup
+
+### Backend
+
+```bash
+cd backend
+# Windows:
+py -3.12 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+
+# macOS / Linux:
+python3.12 -m venv .venv
+./.venv/bin/python -m pip install -r requirements.txt
+./.venv/bin/python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+```
+
+### Frontend
+
+```bash
+cd frontend
+npm install
+npm run dev -- --host 127.0.0.1 --port 5173
+```
+
+> On Windows PowerShell, if `npm` is blocked, use `npm.cmd`.
+
+macOS/Linux paths are supported by the Node setup/dev scripts; phonemizer/`espeakng-loader` behavior may vary by OS — verify ONNX preview once after install.
 
 ---
 
@@ -179,30 +202,49 @@ cd backend
 ./.venv/bin/python -m pytest
 ```
 
+Frontend production build:
+
+```bash
+cd frontend
+npm run build
+```
+
+Optional smoke scripts (require network for first download):
+
+```bash
+cd backend
+$env:PYTHONPATH=(Get-Location)   # PowerShell
+.\.venv\Scripts\python.exe scripts\smoke_download_voices.py
+.\.venv\Scripts\python.exe scripts\smoke_download_model.py model_q8f16
+.\.venv\Scripts\python.exe scripts\smoke_onnx_preview.py
+.\.venv\Scripts\python.exe scripts\smoke_benchmark.py
+```
+
 ---
 
 ## Troubleshooting
 
 | Problem | Fix |
 |---------|-----|
-| `py -3.11` / wrong Python | Use **3.12**: `py -3.12 -m venv .venv` |
-| Kokoro install fails on 3.13/3.14 | Recreate the venv with Python **≤ 3.12** |
-| `Activate.ps1` blocked | Don’t activate — call `.\.venv\Scripts\python.exe -m …` |
-| `uvicorn` / `kokoro` not found | You installed into system Python. Rerun `npm run setup` |
-| First generate fails | Stay online until the model/voice pack finishes downloading |
-| UI can’t reach API | Backend must be on **8000**, frontend on **5173** |
-| Slow on CPU | Normal for first load; later turns reuse cache |
+| Wrong Python | Use **3.12**: `py -3.12 -m venv .venv` |
+| Kokoro fails on 3.13/3.14 | Recreate venv with Python **≤ 3.12** |
+| ONNX load crashes / empty | App disables ORT graph opts; update `onnxruntime` / re-download model |
+| Selected ONNX missing | Models panel → Download (and voice pack) — no silent fallback |
+| UI can’t reach API | Backend on **8000**, frontend on **5173**, both on localhost |
+| Slow first Torch generate | Normal; later turns reuse cache. Try ONNX `model_q8f16` |
 
 ---
 
 ## License notes
 
-- This app’s project code: use / modify as you like for personal and local projects.
-- Kokoro model weights: [Apache-2.0](https://github.com/hexgrad/kokoro) (see upstream for details).
+- This app’s project code: use / modify for personal and local projects.
+- Kokoro / ONNX weights: [Apache-2.0](https://github.com/hexgrad/kokoro) — see upstream.
 
 ---
 
 ## Acknowledgements
 
-- [hexgrad/kokoro](https://github.com/hexgrad/kokoro) — TTS engine
-- FastAPI, Vite, React, lameenc
+- [hexgrad/kokoro](https://github.com/hexgrad/kokoro) — PyTorch TTS
+- [onnx-community/Kokoro-82M-v1.0-ONNX](https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX) — ONNX variants
+- [thewh1teagle/kokoro-onnx](https://github.com/thewh1teagle/kokoro-onnx) — ONNX Python helper
+- FastAPI, Vite, React, lameenc, ONNX Runtime

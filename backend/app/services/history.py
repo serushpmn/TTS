@@ -7,6 +7,7 @@ from uuid import uuid4
 
 from app.config import settings
 from app.models.schemas import HistoryItem
+from app.services.atomic import atomic_write_json
 
 
 HISTORY_FILE = settings.data_dir / "history.json"
@@ -19,7 +20,7 @@ def _read() -> list[dict]:
 
 
 def _write(items: list[dict]) -> None:
-    HISTORY_FILE.write_text(json.dumps(items, indent=2), encoding="utf-8")
+    atomic_write_json(HISTORY_FILE, items)
 
 
 def list_history() -> list[HistoryItem]:
@@ -34,6 +35,7 @@ def add_history(
     messages: int,
     mp3_filename: str | None = None,
     mp3_url: str | None = None,
+    model_id: str | None = None,
 ) -> HistoryItem:
     item = HistoryItem(
         id=uuid4().hex,
@@ -43,6 +45,7 @@ def add_history(
         mp3_filename=mp3_filename,
         mp3_url=mp3_url,
         messages=messages,
+        model_id=model_id,
         created_at=datetime.now(timezone.utc).isoformat(),
     )
     values = _read()

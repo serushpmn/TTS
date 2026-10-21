@@ -13,10 +13,24 @@ const venvPython = path.join(
 );
 const npmCmd = isWin ? "npm.cmd" : "npm";
 
+/**
+ * Avoid Windows `shell:true` for .exe paths under folders with spaces
+ * (e.g. "Cursor Projects"). .cmd/.bat still use the shell.
+ */
+function spawnProcess(command, args, options) {
+  const winShell = isWin && /\.(cmd|bat)$/i.test(command);
+  return spawn(command, args, {
+    ...options,
+    shell: winShell,
+    windowsHide: true,
+  });
+}
+
 function run(command, args, cwd) {
   return new Promise((resolve, reject) => {
     console.log(`\n$ ${command} ${args.join(" ")}`);
-    const child = spawn(command, args, { cwd, stdio: "inherit", shell: isWin });
+    const child = spawnProcess(command, args, { cwd, stdio: "inherit" });
+    child.on("error", (error) => reject(error));
     child.on("exit", (code) => {
       if (code === 0) resolve();
       else reject(new Error(`${command} exited with code ${code}`));

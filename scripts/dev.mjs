@@ -26,12 +26,24 @@ if (!existsSync(path.join(root, "frontend", "node_modules"))) {
   fail("Frontend packages missing. Run once:  npm run setup");
 }
 
+/**
+ * Spawn without Windows `shell:true` for .exe paths that contain spaces
+ * (e.g. D:\\Cursor Projects\\...). .cmd/.bat still use the shell.
+ */
+function spawnProcess(command, args, options) {
+  const winShell = isWin && /\.(cmd|bat)$/i.test(command);
+  return spawn(command, args, {
+    ...options,
+    shell: winShell,
+    windowsHide: true,
+  });
+}
+
 function run(label, command, args, cwd) {
   console.log(`→ starting ${label}`);
-  const child = spawn(command, args, {
+  const child = spawnProcess(command, args, {
     cwd,
     stdio: "inherit",
-    shell: isWin,
     env: process.env,
   });
   children.push(child);
@@ -39,6 +51,11 @@ function run(label, command, args, cwd) {
     if (shuttingDown) return;
     console.error(`\n[${label}] stopped (${signal || code}). Closing the rest…`);
     shutdown(typeof code === "number" ? code : 1);
+  });
+  child.on("error", (error) => {
+    if (shuttingDown) return;
+    console.error(`\n[${label}] failed to start: ${error.message}`);
+    shutdown(1);
   });
 }
 
@@ -53,6 +70,7 @@ function shutdown(code = 0) {
         spawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], {
           stdio: "ignore",
           shell: true,
+          windowsHide: true,
         });
       } else {
         child.kill("SIGTERM");
@@ -70,7 +88,7 @@ process.on("SIGTERM", () => shutdown(0));
 run(
   "backend",
   python,
-  ["-m", "uvicorn", "app.main:app", "--reload", "--port", "8000"],
+  ["-m", "uvicorn", "app.main:app", "--reload", "--host", "127.0.0.1", "--port", "8000"],
   path.join(root, "backend"),
 );
 run(
@@ -81,7 +99,7 @@ run(
 );
 
 setTimeout(() => {
-  const url = "http://localhost:5173";
+  const url = "http://127.0.0.1:5173";
   console.log(`\nDialogue Studio → ${url}\nPress Ctrl+C to stop both servers.\n`);
   if (isWin) {
     spawn("cmd", ["/c", "start", "", url], { detached: true, stdio: "ignore" }).unref();

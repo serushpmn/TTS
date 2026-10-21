@@ -34,6 +34,10 @@ class Settings:
     speaker_change_pause: float = float(os.getenv("SPEAKER_CHANGE_PAUSE", "2.5"))
     output_format: str = os.getenv("OUTPUT_FORMAT", "wav")
     kokoro_device: str = os.getenv("KOKORO_DEVICE", "auto")
+    # Bind to loopback by default; set API_HOST=0.0.0.0 only if you intentionally expose LAN.
+    api_host: str = os.getenv("API_HOST", "127.0.0.1")
+    api_port: int = int(os.getenv("API_PORT", "8000"))
+    max_lecture_chars: int = int(os.getenv("MAX_LECTURE_CHARS", "200000"))
     output_dir: Path = ROOT / "output"
     temp_dir: Path = ROOT / "temp"
     data_dir: Path = ROOT / "data"
@@ -41,6 +45,9 @@ class Settings:
     def ensure_directories(self) -> None:
         for directory in (self.output_dir, self.temp_dir, self.data_dir):
             directory.mkdir(parents=True, exist_ok=True)
+            (self.data_dir / "models").mkdir(parents=True, exist_ok=True)
+            (self.data_dir / "voices").mkdir(parents=True, exist_ok=True)
+            (self.data_dir / "benchmarks").mkdir(parents=True, exist_ok=True)
 
     @property
     def kokoro_torch_device(self) -> str | None:

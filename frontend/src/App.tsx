@@ -1,6 +1,10 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { api } from "./api";
 import { CHAT_THEMES, loadChatTheme, saveChatTheme, type ChatTheme } from "./bubbles";
+import { AudioPlayer } from "./components/AudioPlayer";
+import { Icon } from "./components/Icons";
+import { ModelPanel } from "./components/ModelPanel";
+import { ProjectsPanel } from "./components/ProjectsPanel";
 import { clearDraft, formatDuration, loadDraft, saveDraft } from "./draft";
 import { estimateDialogueSeconds } from "./estimate";
 import { applyAppearance, loadMode, type ModeId } from "./themes";
@@ -61,89 +65,6 @@ function formatWhen(iso: string) {
     return new Date(iso).toLocaleString();
   } catch {
     return iso;
-  }
-}
-
-function Icon({ name }: { name: "sun" | "moon" | "help" | "import" | "history" | "reset" | "play" | "random" | "close" | "add" | "stop" }) {
-  const common = { width: 16, height: 16, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.75, strokeLinecap: "round" as const, strokeLinejoin: "round" as const, "aria-hidden": true };
-  switch (name) {
-    case "sun":
-      return (
-        <svg {...common}>
-          <circle cx="12" cy="12" r="4" />
-          <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
-        </svg>
-      );
-    case "moon":
-      return (
-        <svg {...common}>
-          <path d="M21 14.5A8.5 8.5 0 1 1 9.5 3 7 7 0 0 0 21 14.5z" />
-        </svg>
-      );
-    case "help":
-      return (
-        <svg {...common}>
-          <circle cx="12" cy="12" r="9" />
-          <path d="M9.6 9a2.4 2.4 0 1 1 3.3 2.2c-.8.4-1.4 1-1.4 1.8V14" />
-          <circle cx="12" cy="17" r=".8" fill="currentColor" stroke="none" />
-        </svg>
-      );
-    case "import":
-      return (
-        <svg {...common}>
-          <path d="M12 3v12" />
-          <path d="M8 11l4 4 4-4" />
-          <path d="M5 19h14" />
-        </svg>
-      );
-    case "history":
-      return (
-        <svg {...common}>
-          <circle cx="12" cy="12" r="9" />
-          <path d="M12 7v5l3 2" />
-        </svg>
-      );
-    case "reset":
-      return (
-        <svg {...common}>
-          <path d="M3 12a9 9 0 1 0 3-6.7" />
-          <path d="M3 4v5h5" />
-        </svg>
-      );
-    case "play":
-      return (
-        <svg {...common}>
-          <path d="M8 5.5v13l11-6.5z" fill="currentColor" stroke="none" />
-        </svg>
-      );
-    case "random":
-      return (
-        <svg {...common}>
-          <path d="M4 7h4l3 5 3-5h6" />
-          <path d="M17 4l3 3-3 3" />
-          <path d="M4 17h4l2.5-3.5" />
-          <path d="M14.5 13.5 17 17h3" />
-          <path d="M17 14l3 3-3 3" />
-        </svg>
-      );
-    case "close":
-      return (
-        <svg {...common}>
-          <path d="M6 6l12 12M18 6 6 18" />
-        </svg>
-      );
-    case "add":
-      return (
-        <svg {...common}>
-          <path d="M12 5v14M5 12h14" />
-        </svg>
-      );
-    case "stop":
-      return (
-        <svg {...common}>
-          <rect x="7" y="7" width="10" height="10" rx="1.5" fill="currentColor" stroke="none" />
-        </svg>
-      );
   }
 }
 
@@ -210,7 +131,7 @@ function AutoTextarea({
   );
 }
 
-type PanelId = "import" | "history" | null;
+type PanelId = "import" | "history" | "models" | "projects" | null;
 
 export default function App() {
   const restored = useMemo(() => loadDraft(), []);
@@ -249,6 +170,8 @@ export default function App() {
   const [lecturePlan, setLecturePlan] = useState<LecturePlan | null>(null);
   const [speakersExpanded, setSpeakersExpanded] = useState(false);
   const [activeMessageId, setActiveMessageId] = useState<string | null>(null);
+  const [selectedModelId, setSelectedModelId] = useState(restored?.selectedModelId ?? "kokoro-torch");
+  const [playbackRate, setPlaybackRate] = useState(1);
   const jobIdRef = useRef<string | null>(null);
 
   const speakerById = useMemo(() => new Map(speakers.map((s) => [s.id, s])), [speakers]);
@@ -270,6 +193,13 @@ export default function App() {
       }
     }).catch((e) => setError(e.message));
     refreshHistory().catch((e) => setError(e.message));
+    api
+      .getPrefs()
+      .then((prefs) => {
+        setSelectedModelId(prefs.selected_model_id);
+        setPlaybackRate(prefs.playback_rate || 1);
+      })
+      .catch(() => undefined);
   }, []);
 
   useEffect(() => {
@@ -288,11 +218,12 @@ export default function App() {
         narratorVoice,
         narratorSpeed,
         sectionPause,
+        selectedModelId,
         chatTheme,
       });
     }, 450);
     return () => window.clearTimeout(timer);
-  }, [appMode, topic, speakers, messages, pause, lectureText, narratorVoice, narratorSpeed, sectionPause, chatTheme]);
+  }, [appMode, topic, speakers, messages, pause, lectureText, narratorVoice, narratorSpeed, sectionPause, selectedModelId, chatTheme]);
 
   useEffect(() => {
     if (appMode !== "lecture" || !lectureText.trim()) {
@@ -328,11 +259,34 @@ export default function App() {
     id: slugify(topic || "conversation"),
     name: topic || "conversation",
     topic: topic || "conversation",
+    mode: appMode,
     speakers,
     messages,
     speaker_change_pause: pause,
+    same_speaker_pause: 0.35,
+    lecture_text: lectureText,
+    narrator_voice: narratorVoice,
+    narrator_speed: narratorSpeed,
+    section_pause: sectionPause,
+    model_id: selectedModelId,
     audio_url: audioUrl,
   });
+
+  function openProject(project: Project) {
+    setAppMode(project.mode === "lecture" ? "lecture" : "dialogue");
+    setTopic(project.topic || project.name);
+    if (project.speakers?.length) setSpeakers(project.speakers);
+    if (project.messages?.length) setMessages(sanitizeMessages(project.messages));
+    setPause(project.speaker_change_pause ?? 2.5);
+    setLectureText(project.lecture_text || "");
+    setNarratorVoice(project.narrator_voice || "af_heart");
+    setNarratorSpeed(project.narrator_speed ?? 1);
+    setSectionPause(project.section_pause ?? 0.85);
+    if (project.model_id) setSelectedModelId(project.model_id);
+    setAudioUrl(project.audio_url || undefined);
+    setPanel(null);
+    setStatus(`Opened “${project.name}”`);
+  }
 
   function togglePanel(next: PanelId) {
     setPanel((current) => (current === next ? null : next));
@@ -446,10 +400,44 @@ export default function App() {
     try {
       setError("");
       setBusy(true);
-      const result = await api.preview(text, speaker.voice_id, speaker.speed);
+      const result = await api.preview(text, speaker.voice_id, speaker.speed, selectedModelId);
       new Audio(api.base + result.url).play();
     } catch (e) {
       setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function regenerateMessage(message: Message, index: number) {
+    const speaker = speakerById.get(message.speaker_id);
+    if (!speaker || !message.text.trim()) return;
+    try {
+      setError("");
+      setBusy(true);
+      setStatus(`Regenerating line ${index + 1}…`);
+      const result = await api.regenerateSegment({
+        mode: "dialogue",
+        index,
+        text: message.text,
+        voice_id: speaker.voice_id,
+        speed: speaker.speed,
+        model_id: selectedModelId,
+        messages,
+        speakers,
+        speaker_change_pause: pause,
+        same_speaker_pause: 0.35,
+        topic: topic.trim() || "conversation",
+      });
+      setAudioUrl(result.url);
+      setAudioName(result.filename);
+      setMp3Url(result.mp3_url);
+      setMp3Name(result.mp3_filename);
+      setStatus("Line regenerated");
+      await refreshHistory();
+    } catch (e) {
+      setError((e as Error).message);
+      setStatus("");
     } finally {
       setBusy(false);
     }
@@ -475,6 +463,7 @@ export default function App() {
           voice_id: narratorVoice,
           speed: narratorSpeed,
           section_pause: sectionPause,
+          model_id: selectedModelId,
         });
         await pollJob(started);
       } catch (e) {
@@ -726,6 +715,12 @@ export default function App() {
             <ActionButton label="History" active={panel === "history"} onClick={() => togglePanel("history")}>
               <Icon name="history" />
             </ActionButton>
+            <ActionButton label="Models" active={panel === "models"} onClick={() => togglePanel("models")}>
+              <Icon name="model" />
+            </ActionButton>
+            <ActionButton label="Projects" active={panel === "projects"} onClick={() => togglePanel("projects")}>
+              <Icon name="project" />
+            </ActionButton>
             <ActionButton label="Reset" onClick={resetAll}>
               <Icon name="reset" />
             </ActionButton>
@@ -920,13 +915,15 @@ export default function App() {
         <p className="hint">
           {appMode === "lecture" ? (
             <>
-              Paste a long script. Blank lines become sections. Use مکث / خنده / آهسته. Shortcuts: Ctrl+Enter
-              generate, Esc cancel.
+              Paste a long script. Blank lines become sections. Tags: [pause], [pause:1.5s], [slow], [fast],
+              [laugh]/[sigh] (spoken approximations, not recorded sound effects). Open Models to pick ONNX or
+              PyTorch. Shortcuts: Ctrl+Enter generate, Esc cancel.
             </>
           ) : (
             <>
-              Choose a chat theme once for the whole conversation. Use مکث / خنده / آهسته inside a message.
-              Speakers compact when the chat gets busy. Ctrl+Enter generate, Esc cancel.
+              Choose a chat theme once for the whole conversation. Tags: [pause], [pause:1.5s], [slow], [fast],
+              [laugh]/[sigh] (spoken approximations). Use Models for ONNX variants; Projects to save/reopen.
+              Ctrl+Enter generate, Esc cancel. ↻ regenerates one line.
             </>
           )}
         </p>
@@ -1048,6 +1045,14 @@ export default function App() {
                         >
                           ▶
                         </button>
+                        <button
+                          type="button"
+                          title="Regenerate this line"
+                          disabled={!message.text.trim() || !speaker || busy || !topic.trim()}
+                          onClick={() => void regenerateMessage(message, index)}
+                        >
+                          ↻
+                        </button>
                         <button type="button" title="Move up" onClick={() => move(index, -1)}>
                           ↑
                         </button>
@@ -1165,7 +1170,15 @@ export default function App() {
                 <div className="audio-sphere" aria-hidden="true" />
                 <h2>{audioName || "Ready"}</h2>
               </div>
-              <audio controls src={api.base + audioUrl} />
+              <AudioPlayer
+                src={api.base + audioUrl}
+                label={`Model: ${selectedModelId}`}
+                playbackRate={playbackRate}
+                onPlaybackRateChange={(rate) => {
+                  setPlaybackRate(rate);
+                  void api.savePrefs({ playback_rate: rate }).catch(() => undefined);
+                }}
+              />
               <div className="download-row">
                 <a className="primary download" href={api.base + audioUrl} download={audioName || "conversation.wav"}>
                   WAV
@@ -1182,6 +1195,7 @@ export default function App() {
               <div className="audio-sphere" aria-hidden="true" />
               <p>Generate to get WAV + MP3 here.</p>
               <p className="muted shortcut-hint">Ctrl+Enter · Esc to cancel</p>
+              <p className="muted">Model: {selectedModelId}</p>
             </section>
           )}
           {status && !generating && <div className="notice tight">{status}</div>}
@@ -1192,7 +1206,15 @@ export default function App() {
         <div className="drawer-backdrop" onClick={() => setPanel(null)}>
           <aside className="drawer" onClick={(e) => e.stopPropagation()}>
             <div className="drawer-head">
-              <h2>{panel === "import" ? "Import" : "History"}</h2>
+              <h2>
+                {panel === "import"
+                  ? "Import"
+                  : panel === "history"
+                    ? "History"
+                    : panel === "models"
+                      ? "Models"
+                      : "Projects"}
+              </h2>
               <ActionButton label="Close" onClick={() => setPanel(null)}>
                 <Icon name="close" />
               </ActionButton>
@@ -1219,6 +1241,7 @@ export default function App() {
                     <div>
                       <strong>{item.topic}</strong>
                       <span>{formatWhen(item.created_at)}</span>
+                      {item.model_id && <span className="muted"> · {item.model_id}</span>}
                     </div>
                     <div className="history-actions">
                       <a className="link-btn" href={api.base + item.url} download={item.filename}>
@@ -1242,13 +1265,37 @@ export default function App() {
                       >
                         Open
                       </button>
-                      <button type="button" className="danger" onClick={() => deleteHistoryItem(item)}>
+                      <button
+                        type="button"
+                        className="danger"
+                        onClick={() => {
+                          if (window.confirm(`Delete export “${item.topic}”?`)) void deleteHistoryItem(item);
+                        }}
+                      >
                         Delete
                       </button>
                     </div>
                   </div>
                 ))}
               </div>
+            )}
+
+            {panel === "models" && (
+              <ModelPanel
+                selectedModelId={selectedModelId}
+                onSelectedModelId={setSelectedModelId}
+                onError={setError}
+                onStatus={setStatus}
+              />
+            )}
+
+            {panel === "projects" && (
+              <ProjectsPanel
+                current={makeProject()}
+                onOpen={openProject}
+                onError={setError}
+                onStatus={setStatus}
+              />
             )}
           </aside>
         </div>

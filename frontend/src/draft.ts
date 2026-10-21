@@ -13,6 +13,7 @@ export type WorkspaceDraft = {
   narratorVoice: string;
   narratorSpeed: number;
   sectionPause: number;
+  selectedModelId?: string;
   chatTheme?: ChatTheme;
   savedAt: string;
 };

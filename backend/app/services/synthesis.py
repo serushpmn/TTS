@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 import re
 import wave
@@ -9,7 +10,8 @@ import numpy as np
 from app.audio.concatenate import concatenate_wavs
 from app.config import settings
 from app.services.markup import parse_markup
-from app.tts.kokoro_engine import KokoroEngine
+from app.services.prefs import selected_model_id
+from app.tts.factory import engine_hub
 
 
 def slugify_topic(topic: str) -> str:
@@ -39,11 +41,18 @@ def write_silence(seconds: float, destination: Path, sample_rate: int = 24000) -
     return destination
 
 
-def synthesize_turn(engine: KokoroEngine, text: str, voice_id: str, speed: float) -> Path:
+def synthesize_turn(
+    text: str,
+    voice_id: str,
+    speed: float,
+    engine=None,
+    model_id: str | None = None,
+) -> Path:
     """Synthesize one turn, expanding [pause]/[laugh]/[slow]/etc. tags."""
+    active_engine = engine or engine_hub.get(model_id or selected_model_id())
     parts = parse_markup(text)
     if len(parts) == 1 and parts[0].kind == "speech":
-        return engine.synthesize(parts[0].value, voice_id, speed)
+        return active_engine.synthesize(parts[0].value, voice_id, speed)
 
     segments: list[tuple[Path, float]] = []
     active_speed = max(0.5, min(2.0, speed))
@@ -54,18 +63,21 @@ def synthesize_turn(engine: KokoroEngine, text: str, voice_id: str, speed: float
         if part.kind == "pause":
             silence = settings.temp_dir / f"silence-{part.seconds:.2f}.wav"
             if not silence.exists():
-                write_silence(part.seconds, silence, engine.sample_rate)
+                write_silence(part.seconds, silence, active_engine.sample_rate)
             segments.append((silence, 0.0))
             continue
         spoken = part.value
-        audio = engine.synthesize(spoken, voice_id, active_speed)
+        audio = active_engine.synthesize(spoken, voice_id, active_speed)
         trailing = 0.12 if index < len(parts) - 1 else 0.0
         segments.append((audio, trailing))
 
     if not segments:
-        return engine.synthesize(" ", voice_id, speed)
+        return active_engine.synthesize(" ", voice_id, speed)
 
-    combined = settings.temp_dir / f"turn-{engine.cache_key(text, voice_id, speed)}.wav"
+    model_key = getattr(active_engine, "model_id", model_id or "unknown")
+    digest_source = f"{model_key}|{text}|{voice_id}|{speed}"
+    digest = hashlib.sha256(digest_source.encode()).hexdigest()
+    combined = settings.temp_dir / f"turn-{digest}.wav"
     if not combined.exists():
         concatenate_wavs(segments, combined)
     return combined
