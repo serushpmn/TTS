@@ -1,0 +1,18 @@
+---
+description: FastAPI route and job conventions
+globs: backend/app/api/**/*.py
+alwaysApply: false
+---
+
+# API layer
+
+Routers are included from `backend/app/main.py`. Prefix is the full path (e.g. `/api/generate`), not a router prefix.
+
+- Validate with Pydantic models from `app.models.schemas`.
+- Domain/validation failures: `raise fail(error)` (HTTP 400). Missing resources: 404.
+- `POST /api/generate` and `POST /api/lecture` must call `assert_model_supports_synth_lang` before starting a job, then `jobs.create` + background `run_generation` / `run_lecture`.
+- Static paths like `/api/models/voices/download` must stay **above** `/api/models/{model_id}/…`.
+- Returning files: never take user paths; use `Path(filename).name` and resolve under `settings.output_dir` (see `audio_local_path`).
+- CORS allows only `http://localhost:5173` and `http://127.0.0.1:5173`.
+
+Endpoint list: `docs/api.md`. Do not change a contract without `frontend/src/api.ts` and `docs/api.md`.

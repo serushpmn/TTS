@@ -1,0 +1,17 @@
+---
+description: React UI conventions for Dialogue Studio
+globs: frontend/src/**/*.{ts,tsx,css}
+alwaysApply: false
+---
+
+# Frontend
+
+- `main.tsx` mounts `App`. No client-side router.
+- Call the backend only through `api.ts`. Poll generate jobs with `generateStatus`; cancel with `cancelGenerate`.
+- Header: UI locale EN/FA/DE. Speech language stays in the left Delivery rail.
+- Settings `⋯`: Models, Voices, Dict, Guide, bubble theme, Reset. Keep Import / History / Projects in the header.
+- i18n: add the same key to `en`, `fa`, and `de` in `i18n.ts`.
+- Layout tokens live in `styles.css` (`--space-*`, light/dark). Respect `prefers-reduced-motion`.
+- Chat inputs: `dir="auto"`. Composer tags use `Icon` + `tagIcon()`, not one shared pause glyph.
+
+Studio layout and chrome: `docs/architecture.md` (UI section) and `README.md` header tools.

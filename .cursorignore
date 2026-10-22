@@ -1,0 +1,43 @@
+﻿# Dependencies and virtualenvs
+node_modules/
+frontend/node_modules/
+backend/.venv/
+.venv/
+
+# Build and caches
+frontend/dist/
+**/__pycache__/
+**/*.pyc
+**/.pytest_cache/
+**/.mypy_cache/
+**/.ruff_cache/
+**/.vite/
+**/*.tsbuildinfo
+
+# Logs
+**/*.log
+npm-debug.log*
+
+# Env (never index secrets)
+.env
+**/.env
+!**/.env.example
+
+# Generated audio, model blobs, local JSON state
+output/**
+!output/.gitkeep
+temp/**
+!temp/.gitkeep
+data/*.json
+data/models/
+data/voices/
+data/benchmarks/
+data/voice_samples/
+data/tone_samples/
+
+# Local probes and binaries
+backend/_probe.txt
+**/*.wav
+**/*.mp3
+**/*.onnx
+**/*.bin

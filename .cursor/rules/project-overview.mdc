@@ -1,0 +1,29 @@
+---
+description: Project overview
+alwaysApply: true
+---
+
+# Dialogue Studio — overview
+
+Local Kokoro TTS studio: **Vite/React** (`frontend/`, port 5173) + **FastAPI** (`backend/app/main.py`, port 8000). No cloud keys, no SQL, no auth. Persistence is JSON under `data/`.
+
+**Default model preference:** `kokoro-torch` until the user installs/selects ONNX (`model_q8f16` is the recommended ONNX id). One engine loaded at a time.
+
+**UI vs speech language:** header EN/FA/DE is UI only; synth language stays in Delivery.
+
+Commands: `npm run setup`, `npm run dev`. Tests: `backend` pytest; `frontend` `npm run build`.
+
+Do not silently fall back between models. Do not enable ONNX graph optimizations. Tones are speed/pause markup, not native emotion.
+
+Full agent guide: `AGENTS.md`.
+
+| Need | File |
+|------|------|
+| Architecture / engines / jobs | `docs/architecture.md` |
+| HTTP endpoints | `docs/api.md` |
+| JSON files and folders | `docs/database.md` |
+| Done / remaining / bugs | `docs/status.md` |
+| Roadmap IDs | `docs/FEATURE_ROADMAP.md` |
+| Coding patterns | `.cursor/rules/coding-style.mdc` |
+
+After architecture or feature work, update `docs/status.md` and related docs. Update `README.md` when user-facing behavior changes. Do not commit unless asked.

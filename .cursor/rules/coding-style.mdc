@@ -1,0 +1,37 @@
+---
+description: Coding conventions verified from this repo
+alwaysApply: true
+---
+
+# Coding style (verified)
+
+## Python (`backend/`)
+
+- `from __future__ import annotations` at top of modules.
+- Public HTTP bodies: Pydantic `BaseModel` in `backend/app/models/schemas.py` (`Field`, `field_validator`).
+- Route errors: `raise fail(error)` from `app.api.deps` → `HTTPException(400, detail=str(error))`. Use `HTTPException(404/400)` directly for missing jobs/projects/files.
+- Long work: `threading.Thread(..., daemon=True)` for generate/lecture/downloads; `ThreadPoolExecutor` for preview/samples/benchmark. Generation jobs are **one-at-a-time** (`jobs.try_begin`).
+- Persist JSON with `app.services.atomic.atomic_write_json` (temp file + `os.replace`).
+- Prefs/pronunciation: in-process `threading.Lock` around read/write.
+- TTS: `engine_hub.get(model_id)` after `model_manager.ensure_assets_for`. Unknown ids → `require_variant` ValueError, never a silent substitute.
+- Temp WAV on Windows: `app.audio.tempfiles.create_temp_wav` / `unlink_quietly` (close `mkstemp` fd). Do not `unlink` an open handle.
+- ONNX: `create_safe_session` sets `GraphOptimizationLevel.ORT_DISABLE_ALL` and `CPUExecutionProvider` only.
+
+## TypeScript (`frontend/`)
+
+- All HTTP goes through `frontend/src/api.ts` (`fetch` + JSON). Base URL: `import.meta.env.VITE_API_URL || "http://localhost:8000"`.
+- Shared shapes live in `frontend/src/types.ts`; keep them aligned with `schemas.py`.
+- User-visible strings: keys in `frontend/src/i18n.ts` for `en` / `fa` / `de`. Persian uses RTL (`locale-fa`).
+- App state and generation orchestration stay in `App.tsx`. Presentational pieces under `frontend/src/components/`.
+- Icons: SVG via `components/Icons.tsx` — do not paste mojibake/unicode “icons” in JSX.
+- Theme: `data-mode` `day`|`night` on `<html>`; chat bubble theme is separate (`bubbles.ts`).
+
+## Errors and honesty
+
+- Surface API `detail` strings in the UI; do not swallow generate failures.
+- Tone copy must not claim native Kokoro emotion (`native_emotion` is false in tone metadata).
+- Do not mix **UI locale** (header) with **synth_lang** (Delivery).
+
+## Docs
+
+If you change routes, JSON files, engines, or shipped features, update the matching file under `docs/` (see `AGENTS.md`).

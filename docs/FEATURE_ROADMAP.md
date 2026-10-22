@@ -111,3 +111,5 @@
 11. موتور/صداهای غیرانگلیسی واقعی‌تر + صف batch (بلندمدت) — مرحله ۸
 
 هر مرحله باید با تست محلی و به‌روزرسانی README تمام شود.
+
+English status snapshot for agents: [`status.md`](status.md). Architecture: [`architecture.md`](architecture.md). API: [`api.md`](api.md). JSON storage: [`database.md`](database.md).

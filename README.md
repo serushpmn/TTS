@@ -6,6 +6,8 @@ Write a conversation or lecture → generate one audio file (WAV + MP3) → down
 Powered by [Kokoro-82M](https://github.com/hexgrad/kokoro) (PyTorch) and selectable [ONNX quantizations](https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX).  
 **No API key. No cloud account. No paid service.** Everything runs on your machine.
 
+**Agents / contributors:** start at [`AGENTS.md`](AGENTS.md). Architecture, API, JSON storage, and status live in [`docs/`](docs/).
+
 ---
 
 ## Quick start
@@ -135,18 +137,26 @@ Official English Kokoro IDs:
 
 ## Configuration (optional)
 
-Copy `backend/.env.example` to `backend/.env`:
+Templates (placeholders only — this app has no API keys):
 
-```env
-DEFAULT_VOICE=af_heart
-DEFAULT_SPEED=1.0
-SPEAKER_CHANGE_PAUSE=2.5
-KOKORO_DEVICE=auto
-API_HOST=127.0.0.1
-API_PORT=8000
-```
+- Root [`.env.example`](.env.example) — index of all names
+- [`backend/.env.example`](backend/.env.example) → copy to `backend/.env` (loaded by `app/config.py`)
+- [`frontend/.env.example`](frontend/.env.example) → copy to `frontend/.env` if the UI should not use `http://localhost:8000`
 
-`API_HOST=127.0.0.1` keeps the API on loopback. Do not set `0.0.0.0` unless you intentionally expose the LAN.
+| Variable | Where | Meaning |
+|----------|--------|---------|
+| `KOKORO_DEVICE` | backend | Torch device; `auto` → library default (`None`). Also returned by `/api/health`. |
+| `TTS_ENGINE` | backend | Loaded into Settings. **Not referenced** elsewhere in code. |
+| `DEFAULT_VOICE` | backend | Loaded into Settings. **Not referenced** elsewhere in code. |
+| `DEFAULT_SPEED` | backend | Loaded into Settings. **Not referenced** elsewhere in code. |
+| `SPEAKER_CHANGE_PAUSE` | backend | Loaded into Settings. Pause used at generate time comes from the request/UI. |
+| `OUTPUT_FORMAT` | backend | Loaded into Settings. Export is always WAV then MP3 in generation code. |
+| `API_HOST` | backend | Loaded into Settings. **`npm run dev` hardcodes `127.0.0.1`.** |
+| `API_PORT` | backend | Loaded into Settings. **`npm run dev` hardcodes `8000`.** |
+| `MAX_LECTURE_CHARS` | backend | Loaded into Settings. Pydantic lecture max is `200_000` in `schemas.py`. |
+| `VITE_API_URL` | frontend | API origin for `api.ts`. Default `http://localhost:8000`. |
+
+Do not set `API_HOST=0.0.0.0` unless you intentionally expose the LAN. `dev.mjs` will still bind loopback until changed.
 
 ---
 
@@ -154,15 +164,16 @@ API_PORT=8000
 
 ```text
 TTS/
+├── AGENTS.md                 # short guide for humans and other agents
 ├── Start.bat / Setup.bat
 ├── package.json              # npm run setup | npm run dev
 ├── scripts/                  # setup + dev launchers
-├── docs/                     # audit, implementation plan, feature roadmap
+├── docs/                     # architecture, api, database, status, roadmap
 ├── backend/                  # FastAPI + Kokoro (Torch / ONNX)
 ├── frontend/                 # Vite + React + TypeScript
 ├── output/                   # generated audio
 ├── temp/                     # cache / previews / benchmark samples
-└── data/                     # history, projects, prefs, models/, voices/
+└── data/                     # JSON prefs/projects/history + models/ + voices/
 ```
 
 ### Planned features (staged)
