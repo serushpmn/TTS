@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 from pathlib import Path
-import tempfile
 import wave
 
 import numpy as np
 
+from app.audio.tempfiles import create_temp_wav, unlink_quietly
 from app.audio.trim import trim_wav_silence
 
 
@@ -24,7 +24,7 @@ def concatenate_wavs(
         for source, pause_after in items:
             path = source
             if trim_silence:
-                tmp = Path(tempfile.mkstemp(suffix=".wav", prefix="trim-")[1])
+                tmp = create_temp_wav(prefix="trim-")
                 temp_files.append(tmp)
                 path = trim_wav_silence(source, tmp)
             prepared.append((path, pause_after))
@@ -46,4 +46,4 @@ def concatenate_wavs(
                     output.writeframes(np.zeros(int(rate * pause_after * channels), dtype=np.int16).tobytes())
     finally:
         for path in temp_files:
-            path.unlink(missing_ok=True)
+            unlink_quietly(path)

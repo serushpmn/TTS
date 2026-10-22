@@ -8,6 +8,7 @@ import wave
 import numpy as np
 
 from app.audio.concatenate import concatenate_wavs
+from app.audio.tempfiles import create_temp_wav, unlink_quietly
 from app.audio.trim import trim_wav_silence
 from app.config import settings
 from app.services.markup import parse_markup
@@ -77,7 +78,13 @@ def synthesize_turn(
         if trim_silence:
             trimmed = settings.temp_dir / f"trim-{path.stem}.wav"
             if not trimmed.exists():
-                trim_wav_silence(path, trimmed)
+                tmp = create_temp_wav(prefix="trim-", directory=settings.temp_dir)
+                try:
+                    trim_wav_silence(path, tmp)
+                    tmp.replace(trimmed)
+                except Exception:
+                    unlink_quietly(tmp)
+                    raise
             return trimmed
         return path
 

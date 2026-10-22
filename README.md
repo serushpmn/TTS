@@ -258,6 +258,7 @@ $env:PYTHONPATH=(Get-Location)   # PowerShell
 | `'D:\Cursor' is not recognized` / setup or backend exits immediately | Folder path contains spaces (e.g. `Cursor Projects`). Use current `scripts/dev.mjs` / `scripts/setup.mjs` (they spawn `.exe` without broken Windows shell quoting). Pull latest scripts, then `npm run setup` / `npm run dev` again. |
 | UI can’t reach API | Backend on **8000**, frontend on **5173**, both on localhost (`127.0.0.1`) |
 | Slow first Torch generate | Normal; later turns reuse cache. Try ONNX `model_q8f16` |
+| `WinError 32` on `trim-*.wav` | Fixed: temp WAV handles are closed before delete, with retries. Restart the backend if an old process still has a file open. |
 
 ---
 
